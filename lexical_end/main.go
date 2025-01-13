@@ -31,9 +31,5 @@ func main() {
 		token = l.NextToken()
 	}
 
-	if token.Type == lexer.ERROR {
-		fmt.Printf("Found error %s\n", token.Literal)
-	}
-
 	fmt.Println("Done compiling!")
 }

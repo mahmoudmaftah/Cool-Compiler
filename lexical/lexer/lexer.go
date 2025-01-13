@@ -14,10 +14,12 @@ type TokenType int
 const (
 	EOF TokenType = iota
 	ERROR
+
+	LBRACE
 )
 
 func (tt TokenType) String() string {
-	return [...]string{"EOF", "ERROR"}[tt]
+	return [...]string{"EOF", "ERROR", "LBRACE"}[tt]
 }
 
 // Token represents a lexical token with its type, value, and position.
@@ -95,6 +97,10 @@ func (l *Lexer) NextToken() Token {
 	case l.char == 0:
 		tok.Type = EOF
 		tok.Literal = ""
+	case l.char == '{':
+		tok.Type = LBRACE
+		tok.Literal = "{"
+		l.readChar()
 	default:
 		tok.Type = ERROR
 		tok.Literal = fmt.Sprintf("Unexpected character: %c", l.char)
