@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"cool-compiler/ast"
 	"cool-compiler/lexer"
 	"fmt"
 )
@@ -64,4 +65,56 @@ func (p *Parser) peekError(t lexer.TokenType) {
 
 func (p *Parser) currentError(t lexer.TokenType) {
 	p.errors = append(p.errors, fmt.Sprintf("Expected current token to be %v, got %v line %d col %d", t, p.curToken.Type, p.peekToken.Line, p.peekToken.Column))
+}
+
+func (p *Parser) ParseProgram() *ast.Program {
+	prog := &ast.Program{}
+	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
+		c := p.ParseClass()
+
+		if !p.expectAndPeek(lexer.SEMI) {
+			continue
+		}
+		prog.Classes = append(prog.Classes, c)
+	}
+	return prog
+}
+
+func (p *Parser) ParseClass() *ast.Class {
+
+	c := &ast.Class{Token: p.curToken}
+	if !p.expectCurrent(lexer.CLASS) {
+		return nil
+	}
+
+	if !p.curTokenIs(lexer.TYPEID) {
+		// Add errors
+		return nil
+	}
+
+	c.Name = p.curToken.Literal
+	if !p.expectAndPeek(lexer.LBRACE) {
+		return nil
+	}
+
+	for !p.peekTokenIs(lexer.RBRACE) {
+		p.nextToken()
+		c.Features = append(c.Features, p.parseFeature())
+		if !p.expectAndPeek(lexer.SEMI) {
+			return nil
+		}
+	}
+
+	if !p.expectAndPeek(lexer.RBRACE) {
+		return nil
+	}
+
+	return c
+}
+
+func (p *Parser) parseFeature() ast.Feature {
+	if p.peekTokenIs(lexer.LPAREN) {
+		return p.parseMethod()
+	}
+	return p.parseAttribute()
 }
