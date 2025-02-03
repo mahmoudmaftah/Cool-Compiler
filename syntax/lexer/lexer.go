@@ -99,6 +99,8 @@ func NewLexer(reader io.Reader) *Lexer {
 	return l
 }
 
+
+
 // readChar reads the next character from the input.
 func (l *Lexer) readChar() {
 	var err error
@@ -113,6 +115,59 @@ func (l *Lexer) readChar() {
 		l.column = 0
 	}
 }
+
+
+
+
+// MAHMOUD MAFTAH : skipComment skips a single-line comment
+func (l *Lexer) skipSingleLineComment() {
+	// Skip until we find a newline or EOF
+	for l.char != '\n' && l.char != 0 {
+		l.readChar()
+	}
+}
+
+
+
+
+
+// MAHMOUD MAFTAH : skipMultiLineComment skips a multi-line comment, handling nested comments
+func (l *Lexer) skipMultiLineComment() error {
+	nestingLevel := 1
+	l.readChar() // Skip the opening '('
+	
+	for nestingLevel > 0 {
+		if l.char == 0 {
+			return fmt.Errorf("EOF in comment")
+		}
+		
+		if l.char == '(' && l.peekChar() == '*' {
+			l.readChar() // Skip '('
+			l.readChar() // Skip '*'
+			nestingLevel++
+			continue
+		}
+		
+		if l.char == '*' && l.peekChar() == ')' {
+			l.readChar() // Skip '*'
+			l.readChar() // Skip ')'
+			nestingLevel--
+			continue
+		}
+		
+		l.readChar()
+	}
+	
+	return nil
+}
+
+
+
+
+
+
+
+
 
 // peekChar returns the next character without advancing the stream.
 func (l *Lexer) peekChar() rune {
@@ -208,6 +263,25 @@ func (l *Lexer) NextToken() Token {
 	}
 
 	switch {
+
+	case l.char == 0:
+		tok.Type = EOF
+		tok.Literal = ""
+	
+	case l.char == '-' && l.peekChar() == '-':
+		l.skipSingleLineComment()
+		return l.NextToken() // Skip the comment and get the next token
+	
+
+	case l.char == '(' && l.peekChar() == '*':
+		if err := l.skipMultiLineComment(); err != nil {
+			tok.Type = ERROR
+			tok.Literal = err.Error()
+			return tok
+		}
+		return l.NextToken() // Skip the comment and get the next token
+
+
 	case l.char == 0:
 		tok.Type = EOF
 		tok.Literal = ""
