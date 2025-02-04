@@ -67,6 +67,19 @@ func (p *Parser) currentError(t lexer.TokenType) {
 	p.errors = append(p.errors, fmt.Sprintf("Expected current token to be %v, got %v line %d col %d", t, p.curToken.Type, p.peekToken.Line, p.peekToken.Column))
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 func (p *Parser) ParseProgram() *ast.Program {
 	prog := &ast.Program{}
 	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
@@ -112,9 +125,19 @@ func (p *Parser) ParseClass() *ast.Class {
 	return c
 }
 
+
+
+
+// TODO : PARSE FEATURE.
 func (p *Parser) parseFeature() ast.Feature {
 	if p.peekTokenIs(lexer.LPAREN) {
 		return p.parseMethod()
 	}
 	return p.parseAttribute()
+}
+
+
+
+func (p *Parser) parseAttribute() *ast.Attribute {
+
 }
