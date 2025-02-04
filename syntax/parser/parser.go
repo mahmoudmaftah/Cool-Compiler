@@ -128,7 +128,7 @@ func (p *Parser) ParseClass() *ast.Class {
 
 
 
-// TODO : PARSE FEATURE.
+// TODO : PARSE FEATURE (can be method ot attribute).
 func (p *Parser) parseFeature() ast.Feature {
 	if p.peekTokenIs(lexer.LPAREN) {
 		return p.parseMethod()
@@ -137,7 +137,119 @@ func (p *Parser) parseFeature() ast.Feature {
 }
 
 
-
+// TODO : PARSE ATTRIBUTE (Will have a name, a type and an optional init expression).
 func (p *Parser) parseAttribute() *ast.Attribute {
+    attr := &ast.Attribute{Token: p.curToken}
 
+    if !p.curTokenIs(lexer.OBJECTID) {
+        return nil
+    }
+    attr.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if !p.expectAndPeek(lexer.COLON) {
+        return nil
+    }
+
+    if !p.expectAndPeek(lexer.TYPEID) {
+        return nil
+    }
+    attr.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if p.peekTokenIs(lexer.ASSIGN) {
+        p.nextToken()
+        p.nextToken()
+        attr.Init = p.parseExpression(LOWEST)
+    }
+
+    return attr
+}
+
+
+
+// TODO : PARSE METHOD (Will have a set of formals and a body).
+func (p *Parser) parseMethod() *ast.Method {
+    method := &ast.Method{Token: p.curToken}
+
+    if !p.curTokenIs(lexer.OBJECTID) {
+        return nil
+    }
+    method.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if !p.expectAndPeek(lexer.LPAREN) {
+        return nil
+    }
+
+    method.Formals = p.parseFormals()
+
+    if !p.expectAndPeek(lexer.COLON) {
+        return nil
+    }
+
+    if !p.expectAndPeek(lexer.TYPEID) {
+        return nil
+    }
+    method.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if !p.expectAndPeek(lexer.LBRACE) {
+        return nil
+    }
+
+    p.nextToken()
+    method.Body = p.parseExpression(LOWEST)
+
+    if !p.expectAndPeek(lexer.RBRACE) {
+        return nil
+    }
+
+    return method
+}
+
+
+
+// TODO : PARSE FORMALS (Will return a set of formals).
+func (p *Parser) parseFormals() []*ast.Formal {
+    var formals []*ast.Formal
+
+    if p.peekTokenIs(lexer.RPAREN) {
+        p.nextToken()
+        return formals
+    }
+
+    p.nextToken()
+    formals = append(formals, p.parseFormal())
+
+    for p.peekTokenIs(lexer.COMMA) {
+        p.nextToken()
+        p.nextToken()
+        formals = append(formals, p.parseFormal())
+    }
+
+    if !p.expectAndPeek(lexer.RPAREN) {
+        return nil
+    }
+
+    return formals
+}
+
+
+
+
+func (p *Parser) parseFormal() *ast.Formal {
+    formal := &ast.Formal{Token: p.curToken}
+
+    if !p.curTokenIs(lexer.OBJECTID) {
+        return nil
+    }
+    formal.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if !p.expectAndPeek(lexer.COLON) {
+        return nil
+    }
+
+    if !p.expectAndPeek(lexer.TYPEID) {
+        return nil
+    }
+    formal.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    return formal
 }
