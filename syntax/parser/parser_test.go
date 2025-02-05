@@ -23,6 +23,87 @@ func checkParserErrors(t *testing.T, p *Parser, i int) {
 	}
 }
 
+
+
+
+
+
+func TestProgramParser(t *testing.T) {
+    tests := []struct {
+        input           string
+        expectedClasses []string
+    }{
+        {
+            // Test case 1: Single empty class
+            input: `
+                class Main {
+                };
+            `,
+            expectedClasses: []string{"Main"},
+        },
+        {
+            // Test case 2: Multiple simple classes
+            input: `
+                class A {
+                };
+                class B {
+                };
+            `,
+            expectedClasses: []string{"A", "B"},
+        },
+        // {
+        //     // Test case 3: Class with basic attribute and method
+        //     input: `
+        //         class Main {
+        //             x : Int;
+        //             getX() : Int { x };
+        //         };
+        //     `,
+        //     expectedClasses: []string{"Main"},
+        // },
+        // {
+        //     // Test case 4: Class with inheritance
+        //     input: `
+        //         class A {
+        //             a : Int;
+        //         };
+        //         class B inherits A {
+        //             b : Int;
+        //         };
+        //     `,
+        //     expectedClasses: []string{"A", "B"},
+        // },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        program := parser.ParseProgram()
+        
+        checkParserErrors(t, parser, i)
+
+        if len(program.Classes) != len(tt.expectedClasses) {
+            t.Fatalf("test[%d] - wrong number of classes. expected=%d, got=%d",
+                i, len(tt.expectedClasses), len(program.Classes))
+        }
+
+        for j, className := range tt.expectedClasses {
+            if program.Classes[j].Name.Value != className {
+                t.Errorf("test[%d] - wrong class name for class %d. expected=%q, got=%q",
+                    i, j, className, program.Classes[j].Name.Value)
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
 func TestClassParser(t *testing.T) {
 	tests := []struct {
 		input          string
@@ -49,11 +130,12 @@ func TestClassParser(t *testing.T) {
 			expectedName:   "B",
 			expectedParent: "A",
 		},
+
 	}
 
 	for i, tt := range tests {
 		parser := newParserFromInput(tt.input)
-		class := parser.parseClass()
+		class := parser.ParseClass()
 
 		checkParserErrors(t, parser, i)
 
@@ -124,15 +206,18 @@ func TestMethodParsing(t *testing.T) {
 		expectedMethodType  string
 	}{
 		{
-			input:               "Main(): Void {};",
-			expectedMethodName:  "Main",
+			// In testcases these are methods and are thus expected to start with a lower case letter
+			// To indicate that these are object and not type identifiers
+			// This took me a while to figure out :(
+			input:               "main(): Void {};",
+			expectedMethodName:  "main",
 			expectedFormalNames: []string{},
 			expectedFormalTypes: []string{},
 			expectedMethodType:  "Void",
 		},
 		{
-			input:               "Sum(a:Integer,b:Integer): Integer {};",
-			expectedMethodName:  "Sum",
+			input:               "sum(a:Integer,b:Integer): Integer {};",
+			expectedMethodName:  "sum",
 			expectedFormalNames: []string{"a", "b"},
 			expectedFormalTypes: []string{"Integer", "Integer"},
 			expectedMethodType:  "Integer",

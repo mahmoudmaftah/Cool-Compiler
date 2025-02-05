@@ -40,8 +40,6 @@ func (ti *TypeIdentifier) TokenLiteral() string { return ti.Token.Literal }
 
 
 
-
-
 type ObjectIdentifier struct {
 	Token lexer.Token
 	Value string
@@ -65,10 +63,12 @@ func (p *Program) TokenLiteral() string { return "" }
 
 
 type Class struct {
-	Token    lexer.Token
-	Name     string
-	Features []Feature
+    Token    lexer.Token
+    Name     *TypeIdentifier     // Changed from string to *TypeIdentifier
+    Features []Feature
+    Parent   *TypeIdentifier
 }
+
 func (c *Class) TokenLiteral() string { return c.Token.Literal }
 
 
