@@ -23,39 +23,34 @@ func checkParserErrors(t *testing.T, p *Parser, i int) {
 	}
 }
 
-
-
-
-
-
 func TestProgramParser(t *testing.T) {
-    tests := []struct {
-        input           string
-        expectedClasses []string
-    }{
-        {
-            // Test case 1: Single empty class
-            input: "class Main {};",
-            expectedClasses: []string{"Main"},
-        },
-        {
-            // Test case 2: Multiple simple classes
-            input: "class A {}; class B {};",
-            expectedClasses: []string{"A", "B"},
-        },
-        {
-            // Test case 3: Class with basic attribute and method
-            input: `
+	tests := []struct {
+		input           string
+		expectedClasses []string
+	}{
+		{
+			// Test case 1: Single empty class
+			input:           "class Main {};",
+			expectedClasses: []string{"Main"},
+		},
+		{
+			// Test case 2: Multiple simple classes
+			input:           "class A {}; class B {};",
+			expectedClasses: []string{"A", "B"},
+		},
+		{
+			// Test case 3: Class with basic attribute and method
+			input: `
                 class Main {
                     x : Int;
                     getX() : Int { x };
                 };
             `,
-            expectedClasses: []string{"Main"},
-        },
-        {
-            // Test case 4: Class with inheritance
-            input: `
+			expectedClasses: []string{"Main"},
+		},
+		{
+			// Test case 4: Class with inheritance
+			input: `
                 class A {
                     a : Int;
                 };
@@ -63,38 +58,81 @@ func TestProgramParser(t *testing.T) {
                     b : Int;
                 };
             `,
-            expectedClasses: []string{"A", "B"},
-        },
-    }
+			expectedClasses: []string{"A", "B"},
+		},
+		{
+			input:           "class Test { test(): Int { 1 }; };",
+			expectedClasses: []string{"Test"},
+		},
+		{
+			input:           "class A { a: Int; }; class B { b: String; };",
+			expectedClasses: []string{"A", "B"},
+		},
+	}
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        program := parser.ParseProgram()
-        
-        checkParserErrors(t, parser, i)
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		program := parser.ParseProgram()
 
-        if len(program.Classes) != len(tt.expectedClasses) {
-            t.Fatalf("test[%d] - wrong number of classes. expected=%d, got=%d",
-                i, len(tt.expectedClasses), len(program.Classes))
-        }
+		checkParserErrors(t, parser, i)
 
-        for j, className := range tt.expectedClasses {
-            if program.Classes[j].Name.Value != className {
-                t.Errorf("test[%d] - wrong class name for class %d. expected=%q, got=%q",
-                    i, j, className, program.Classes[j].Name.Value)
-            }
-        }
-    }
+		if len(program.Classes) != len(tt.expectedClasses) {
+			t.Fatalf("test[%d] - wrong number of classes. expected=%d, got=%d",
+				i, len(tt.expectedClasses), len(program.Classes))
+		}
+
+		for j, className := range tt.expectedClasses {
+			if program.Classes[j].Name.Value != className {
+				t.Errorf("test[%d] - wrong class name for class %d. expected=%q, got=%q",
+					i, j, className, program.Classes[j].Name.Value)
+			}
+		}
+	}
 }
 
+func TestComplexExpressions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// Complex arithmetic with precedence
+			input:    "1 + 2 * 3 / 4 - 5",
+			expected: "((1 + ((2 * 3) / 4)) - 5)",
+		},
+		{
+			// Mixed operators and dispatch
+			input:    "(x + y).foo() + (a * b).bar()",
+			expected: "((x + y).foo() + (a * b).bar())",
+		},
+		{
+			// Complex let with nested expressions
+			input: `let x: Int <- 1 + 2,
+                        y: String <- "hello"
+                    in x + y.length()`,
+			expected: `let x:Int<-(1 + 2),y:String<-"hello" in (x + y.length())`,
+		},
+		{
+			// Complex case with nested expressions
+			input: `case x + y of
+                        a: Int => if z then 1 else 2 fi;
+                        b: String => let w: Int <- 3 in w;
+                    esac`,
+			expected: "case (x + y) of a:Int=>if z then 1 else 2 fi; b:String=>let w:Int<-3 in w esac",
+		},
+	}
 
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
 
-
-
-
-
-
-
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
+}
 
 func TestClassParser(t *testing.T) {
 	tests := []struct {
@@ -122,7 +160,21 @@ func TestClassParser(t *testing.T) {
 			expectedName:   "B",
 			expectedParent: "A",
 		},
-
+		{
+			input:          "class Test { x: Int; y: String; };",
+			expectedName:   "Test",
+			expectedParent: "",
+		},
+		{
+			input:          "class Child inherits Parent { method(): Int { 1 }; };",
+			expectedName:   "Child",
+			expectedParent: "Parent",
+		},
+		{
+			input:          "class Complex { attr: Int <- 42; method(x: Int): Int { x }; };",
+			expectedName:   "Complex",
+			expectedParent: "",
+		},
 	}
 
 	for i, tt := range tests {
@@ -144,6 +196,54 @@ func TestClassParser(t *testing.T) {
 		}
 	}
 }
+
+
+func TestCaseExpression(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {
+            input: `case x of
+                    a : Int => 1;
+                    b : String => 2;
+                    c : Bool => 3;
+                esac`,
+            expected: "case x of a:Int=>1; b:String=>2; c:Bool=>3 esac",
+        },
+        {
+            // Nested case expression
+            input: `case y of
+                    a : Int => case x of
+                        b : Int => 1;
+                        c : String => 2;
+                    esac;
+                    d : String => 3;
+                esac`,
+            expected: "case y of a:Int=>case x of b:Int=>1; c:String=>2 esac; d:String=>3 esac",
+        },
+        {
+            // Case with complex expressions
+            input: `case x + y of
+                    a : Int => b + c;
+                    d : String => e.method();
+                esac`,
+            expected: "case (x + y) of a:Int=>(b + c); d:String=>e.method() esac",
+        },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        expression := parser.parseExpression(START)
+        checkParserErrors(t, parser, i)
+
+        actual := SerializeExpression(expression)
+        if actual != tt.expected {
+            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+        }
+    }
+}
+
 
 func TestFormalParsing(t *testing.T) {
 	tests := []struct {

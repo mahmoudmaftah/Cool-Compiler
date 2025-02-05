@@ -171,93 +171,85 @@ func (p *Parser) currentError(t lexer.TokenType) {
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
-    i := 0
-    prog := &ast.Program{}
-    fmt.Println("Parsing program")
-    for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
-        i += 1
-        if i == 3 {
-            break
-        }
-        c := p.ParseClass()
+	prog := &ast.Program{}
+	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
+		c := p.ParseClass()
 
-        if p.curToken.Type != lexer.SEMI {
-            p.errors = append(p.errors, 
-                fmt.Sprintf("Expected semicolon after class definition at line %d col %d, got %s", 
-                    p.curToken.Line, p.curToken.Column, p.curToken.Type))
-        } else {
-            p.nextToken()
-        }
+		if p.curToken.Type != lexer.SEMI {
+			p.errors = append(p.errors,
+				fmt.Sprintf("Expected semicolon after class definition at line %d col %d, got %s",
+					p.curToken.Line, p.curToken.Column, p.curToken.Type))
+		} else {
+			p.nextToken()
+		}
 
-        fmt.Println(c.Name.Value)
-        prog.Classes = append(prog.Classes, c)
-    }
-    return prog
+		prog.Classes = append(prog.Classes, c)
+	}
+	return prog
 }
 
 func (p *Parser) ParseClass() *ast.Class {
-    c := &ast.Class{Token: p.curToken}
+	c := &ast.Class{Token: p.curToken}
 
-    if !p.expectCurrent(lexer.CLASS) {
-        return nil
-    }
+	if !p.expectCurrent(lexer.CLASS) {
+		return nil
+	}
 
-    if !p.curTokenIs(lexer.TYPEID) {
-        p.errors = append(p.errors,
-            fmt.Sprintf("Expected class name to be TYPEID at line %d col %d, got %s", 
-                p.curToken.Line, p.curToken.Column, p.curToken.Type))
-        return nil
-    }
-    c.Name = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
-    p.nextToken()
+	if !p.curTokenIs(lexer.TYPEID) {
+		p.errors = append(p.errors,
+			fmt.Sprintf("Expected class name to be TYPEID at line %d col %d, got %s",
+				p.curToken.Line, p.curToken.Column, p.curToken.Type))
+		return nil
+	}
+	c.Name = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+	p.nextToken()
 
-    if p.curTokenIs(lexer.INHERITS) {
-        p.nextToken()
-        if !p.curTokenIs(lexer.TYPEID) {
-            p.errors = append(p.errors,
-                fmt.Sprintf("Expected parent class name to be TYPEID at line %d col %d, got %s", 
-                    p.curToken.Line, p.curToken.Column, p.curToken.Type))
-            return nil
-        }
-        c.Parent = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
-        p.nextToken()
-    }
+	if p.curTokenIs(lexer.INHERITS) {
+		p.nextToken()
+		if !p.curTokenIs(lexer.TYPEID) {
+			p.errors = append(p.errors,
+				fmt.Sprintf("Expected parent class name to be TYPEID at line %d col %d, got %s",
+					p.curToken.Line, p.curToken.Column, p.curToken.Type))
+			return nil
+		}
+		c.Parent = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+		p.nextToken()
+	}
 
-    if !p.curTokenIs(lexer.LBRACE) {
-        p.errors = append(p.errors,
-            fmt.Sprintf("Expected { after class declaration at line %d col %d, got %s", 
-                p.curToken.Line, p.curToken.Column, p.curToken.Type))
-        return nil
-    }
-    p.nextToken()
+	if !p.curTokenIs(lexer.LBRACE) {
+		p.errors = append(p.errors,
+			fmt.Sprintf("Expected { after class declaration at line %d col %d, got %s",
+				p.curToken.Line, p.curToken.Column, p.curToken.Type))
+		return nil
+	}
+	p.nextToken()
 
-    for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
-        feature := p.parseFeature()
+	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
+		feature := p.parseFeature()
 
-        if feature != nil {
-            c.Features = append(c.Features, feature)
-            p.nextToken()
-            if p.curTokenIs(lexer.SEMI) {
-                fmt.Println("semi colon found")
-                p.nextToken()
-            } else {
-                p.errors = append(p.errors,
-                    fmt.Sprintf("Expected semicolon after feature at line %d col %d, got %s", 
-                        p.curToken.Line, p.curToken.Column, p.curToken.Type))
-                return nil
-            }
-        }
-    }
+		if feature != nil {
+			c.Features = append(c.Features, feature)
+			p.nextToken()
+			if p.curTokenIs(lexer.SEMI) {
+				p.nextToken()
+			} else {
+				p.errors = append(p.errors,
+					fmt.Sprintf("Expected semicolon after feature at line %d col %d, got %s",
+						p.curToken.Line, p.curToken.Column, p.curToken.Type))
+				return nil
+			}
+		}
+	}
 
-    if !p.curTokenIs(lexer.RBRACE) {
-        p.errors = append(p.errors,
-            fmt.Sprintf("Expected } at end of class at line %d col %d, got %s", 
-                p.curToken.Line, p.curToken.Column, p.curToken.Type))
-        return nil
-    }
-    p.nextToken()
+	if !p.curTokenIs(lexer.RBRACE) {
+		p.errors = append(p.errors,
+			fmt.Sprintf("Expected } at end of class at line %d col %d, got %s",
+				p.curToken.Line, p.curToken.Column, p.curToken.Type))
+		return nil
+	}
+	p.nextToken()
 
-    return c
+	return c
 }
 
 // TODO : PARSE FEATURE (can be method ot attribute).

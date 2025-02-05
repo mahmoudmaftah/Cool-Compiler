@@ -26,12 +26,6 @@ type Feature interface {
 
 
 
-
-
-
-
-
-
 type TypeIdentifier struct {
 	Token lexer.Token
 	Value string
