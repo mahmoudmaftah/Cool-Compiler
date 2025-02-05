@@ -3,6 +3,7 @@ package parser
 import (
 	"cool-compiler/ast"
 	"cool-compiler/lexer"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -197,53 +198,51 @@ func TestClassParser(t *testing.T) {
 	}
 }
 
-
 func TestCaseExpression(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            input: `case x of
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input: `case x of
                     a : Int => 1;
                     b : String => 2;
                     c : Bool => 3;
                 esac`,
-            expected: "case x of a:Int=>1; b:String=>2; c:Bool=>3 esac",
-        },
-        {
-            // Nested case expression
-            input: `case y of
+			expected: "case x of a:Int=>1; b:String=>2; c:Bool=>3 esac",
+		},
+		{
+			// Nested case expression
+			input: `case y of
                     a : Int => case x of
                         b : Int => 1;
                         c : String => 2;
                     esac;
                     d : String => 3;
                 esac`,
-            expected: "case y of a:Int=>case x of b:Int=>1; c:String=>2 esac; d:String=>3 esac",
-        },
-        {
-            // Case with complex expressions
-            input: `case x + y of
+			expected: "case y of a:Int=>case x of b:Int=>1; c:String=>2 esac; d:String=>3 esac",
+		},
+		{
+			// Case with complex expressions
+			input: `case x + y of
                     a : Int => b + c;
                     d : String => e.method();
                 esac`,
-            expected: "case (x + y) of a:Int=>(b + c); d:String=>e.method() esac",
-        },
-    }
+			expected: "case (x + y) of a:Int=>(b + c); d:String=>e.method() esac",
+		},
+	}
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        expression := parser.parseExpression(START)
-        checkParserErrors(t, parser, i)
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
 
-        actual := SerializeExpression(expression)
-        if actual != tt.expected {
-            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
-        }
-    }
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
 }
-
 
 func TestFormalParsing(t *testing.T) {
 	tests := []struct {
@@ -412,3 +411,91 @@ func TestExpressionParssing(t *testing.T) {
 	}
 
 }
+
+
+
+
+
+func TestMethodDispatch(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {
+            // Simple method call
+            input:    "obj.method()",
+            expected: "obj.method()",
+        },
+        {
+            // Method call with arguments
+            input:    "obj.method(1, 2, 3)",
+            expected: "obj.method(1, 2, 3)",
+        },
+        // {
+        //     // Static dispatch
+        //     input:    "obj@Type.method()",
+        //     expected: "obj@Type.method()",
+        // },
+        {
+            // Complex dispatch with nested expressions
+            input:    "(a + b).method((x + y), z.foo())",
+            expected: "(a + b).method((x + y), z.foo())",
+        },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        expression := parser.parseExpression(START)
+        checkParserErrors(t, parser, i)
+
+		fmt.Println(expression)
+        actual := SerializeExpression(expression)
+        if actual != tt.expected {
+            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+        }
+    }
+}
+
+
+
+
+func TestNestedExpressions(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {
+            // Nested if expressions
+            input: `if if x then true else false fi then 1 else 2 fi`,
+            expected: "if if x then true else false fi then 1 else 2 fi",
+        },
+        {
+            // Nested let expressions
+            input: `let x: Int <- 1 in let y: Int <- 2 in x + y`,
+            expected: "let x:Int<-1 in let y:Int<-2 in (x + y)",
+        },
+        {
+            // Mixed nesting
+            input: `if x then
+                        let y: Int <- 1 in y + 2
+                    else
+                        3
+                    fi`,
+            expected: "if x then let y:Int<-1 in (y + 2) else 3 fi",
+        },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        expression := parser.parseExpression(START)
+        checkParserErrors(t, parser, i)
+
+        actual := SerializeExpression(expression)
+        if actual != tt.expected {
+            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+        }
+    }
+}
+
+
+

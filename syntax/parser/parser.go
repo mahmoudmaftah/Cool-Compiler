@@ -33,6 +33,7 @@ var precedences = map[lexer.TokenType]Precedence{
 	lexer.TIMES:  PRODUCT,
 	lexer.DIVIDE: PRODUCT,
 	lexer.DOT:    DISPATCH,
+	lexer.AT:     DISPATCH,
 }
 
 type (
@@ -119,6 +120,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.LE, p.parseBinaryExpression)
 	p.registerInfix(lexer.ASSIGN, p.parseBinaryExpression)
 	p.registerInfix(lexer.DOT, p.parseDispatchExpression)
+	p.registerInfix(lexer.AT, p.parseDispatchExpression)
 
 	// Read two tokens, so curToken and peekToken are both set
 	p.nextToken()
@@ -615,27 +617,36 @@ func (p *Parser) parseDispatchExpression(object ast.Expression) ast.Expression {
 		Object: object,
 	}
 
-	// Handle static dispatch
+	// Check for static dispatch (@Type)
 	if p.peekTokenIs(lexer.AT) {
-		p.nextToken()
-		if !p.expectAndPeek(lexer.TYPEID) {
+		p.nextToken() // consume the '.'
+		p.nextToken() // move to the type
+
+		if !p.curTokenIs(lexer.TYPEID) {
+			p.errors = append(p.errors,
+				fmt.Sprintf("Expected type identifier after @ at line %d col %d, got %s",
+					p.curToken.Line, p.curToken.Column, p.curToken.Type))
 			return nil
 		}
+
 		dispatch.StaticType = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+		// Expect and consume the '.'
 		if !p.expectAndPeek(lexer.DOT) {
 			return nil
 		}
 	}
 
+	// Parse method name
 	if !p.expectAndPeek(lexer.OBJECTID) {
 		return nil
 	}
 	dispatch.Method = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
+	// Parse argument list
 	if !p.expectAndPeek(lexer.LPAREN) {
 		return nil
 	}
-
 	dispatch.Arguments = p.parseExpressionList(lexer.RPAREN)
 
 	return dispatch
