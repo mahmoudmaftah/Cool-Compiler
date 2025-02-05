@@ -35,44 +35,36 @@ func TestProgramParser(t *testing.T) {
     }{
         {
             // Test case 1: Single empty class
+            input: "class Main {};",
+            expectedClasses: []string{"Main"},
+        },
+        {
+            // Test case 2: Multiple simple classes
+            input: "class A {}; class B {};",
+            expectedClasses: []string{"A", "B"},
+        },
+        {
+            // Test case 3: Class with basic attribute and method
             input: `
                 class Main {
+                    x : Int;
+                    getX() : Int { x };
                 };
             `,
             expectedClasses: []string{"Main"},
         },
         {
-            // Test case 2: Multiple simple classes
+            // Test case 4: Class with inheritance
             input: `
                 class A {
+                    a : Int;
                 };
-                class B {
+                class B inherits A {
+                    b : Int;
                 };
             `,
             expectedClasses: []string{"A", "B"},
         },
-        // {
-        //     // Test case 3: Class with basic attribute and method
-        //     input: `
-        //         class Main {
-        //             x : Int;
-        //             getX() : Int { x };
-        //         };
-        //     `,
-        //     expectedClasses: []string{"Main"},
-        // },
-        // {
-        //     // Test case 4: Class with inheritance
-        //     input: `
-        //         class A {
-        //             a : Int;
-        //         };
-        //         class B inherits A {
-        //             b : Int;
-        //         };
-        //     `,
-        //     expectedClasses: []string{"A", "B"},
-        // },
     }
 
     for i, tt := range tests {

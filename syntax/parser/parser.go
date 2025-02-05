@@ -153,7 +153,6 @@ func (p *Parser) expectAndPeek(t lexer.TokenType) bool {
 	return false
 }
 
-
 func (p *Parser) expectCurrent(t lexer.TokenType) bool {
 	if p.curTokenIs(t) {
 		p.nextToken()
@@ -172,87 +171,91 @@ func (p *Parser) currentError(t lexer.TokenType) {
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
-	i := 0
-	prog := &ast.Program{}
-	fmt.Println("Parsing program")
-	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
-		fmt.Println("iteration ", i)
-		c := p.ParseClass()
+    i := 0
+    prog := &ast.Program{}
+    fmt.Println("Parsing program")
+    for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
+        i += 1
+        if i == 3 {
+            break
+        }
+        c := p.ParseClass()
 
-		if !p.expectAndPeek(lexer.SEMI) {
-			continue
-		}
-		// print the class name
-		fmt.Println(c.Name.Value)
-		i += 1;
-		if i == 2 {
-			break
-		}
-		prog.Classes = append(prog.Classes, c)
-	}
-	return prog
+        if p.curToken.Type != lexer.SEMI {
+            p.errors = append(p.errors, 
+                fmt.Sprintf("Expected semicolon after class definition at line %d col %d, got %s", 
+                    p.curToken.Line, p.curToken.Column, p.curToken.Type))
+        } else {
+            p.nextToken()
+        }
+
+        fmt.Println(c.Name.Value)
+        prog.Classes = append(prog.Classes, c)
+    }
+    return prog
 }
 
 func (p *Parser) ParseClass() *ast.Class {
     c := &ast.Class{Token: p.curToken}
 
-    // Parse 'class' keyword
     if !p.expectCurrent(lexer.CLASS) {
         return nil
     }
 
-    // Parse class name
     if !p.curTokenIs(lexer.TYPEID) {
         p.errors = append(p.errors,
-            fmt.Sprintf("Expected class name to be TYPEID, got %s at line %d col %d",
-                p.curToken.Type, p.curToken.Line, p.curToken.Column))
+            fmt.Sprintf("Expected class name to be TYPEID at line %d col %d, got %s", 
+                p.curToken.Line, p.curToken.Column, p.curToken.Type))
         return nil
     }
     c.Name = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
     p.nextToken()
 
-    // Handle inheritance
     if p.curTokenIs(lexer.INHERITS) {
         p.nextToken()
         if !p.curTokenIs(lexer.TYPEID) {
             p.errors = append(p.errors,
-                fmt.Sprintf("Expected parent class name to be TYPEID, got %s at line %d col %d",
-                    p.curToken.Type, p.curToken.Line, p.curToken.Column))
+                fmt.Sprintf("Expected parent class name to be TYPEID at line %d col %d, got %s", 
+                    p.curToken.Line, p.curToken.Column, p.curToken.Type))
             return nil
         }
         c.Parent = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
         p.nextToken()
     }
 
-    // Parse opening brace
     if !p.curTokenIs(lexer.LBRACE) {
+        p.errors = append(p.errors,
+            fmt.Sprintf("Expected { after class declaration at line %d col %d, got %s", 
+                p.curToken.Line, p.curToken.Column, p.curToken.Type))
         return nil
     }
     p.nextToken()
 
-    // Parse features
     for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
         feature := p.parseFeature()
-		
+
         if feature != nil {
-			fmt.Println("new feature is ", feature)
             c.Features = append(c.Features, feature)
-			// print the current token
-			fmt.Println(p.curToken)
-            if !p.expectAndPeek(lexer.SEMI) {
+            p.nextToken()
+            if p.curTokenIs(lexer.SEMI) {
+                fmt.Println("semi colon found")
+                p.nextToken()
+            } else {
+                p.errors = append(p.errors,
+                    fmt.Sprintf("Expected semicolon after feature at line %d col %d, got %s", 
+                        p.curToken.Line, p.curToken.Column, p.curToken.Type))
                 return nil
             }
         }
     }
 
-    // Parse closing brace
     if !p.curTokenIs(lexer.RBRACE) {
         p.errors = append(p.errors,
-            fmt.Sprintf("Expected RBRACE, got %s at line %d col %d",
-                p.curToken.Type, p.curToken.Line, p.curToken.Column))
+            fmt.Sprintf("Expected } at end of class at line %d col %d, got %s", 
+                p.curToken.Line, p.curToken.Column, p.curToken.Type))
         return nil
     }
-    p.nextToken() // move past RBRACE
+    p.nextToken()
 
     return c
 }
