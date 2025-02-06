@@ -6,6 +6,19 @@ import (
 	"fmt"
 )
 
+type ClassNode struct {
+    name     string
+    parent   string
+    features map[string]*ast.Feature
+    methods  map[string]*ast.Method
+    attrs    map[string]*ast.Attribute
+}
+
+type InheritanceGraph struct {
+    classes map[string]*ClassNode
+    roots   []string  // Classes that inherit directly from Object
+}
+
 type SymbolTable struct {
 	symbols map[string]*SymbolEntry
 	parent  *SymbolTable
@@ -41,6 +54,8 @@ func (st *SymbolTable) Lookup(name string) (*SymbolEntry, bool) {
 type SemanticAnalyser struct {
 	globalSymbolTable *SymbolTable
 	errors            []string
+	inheritanceGraph  *InheritanceGraph
+    currentClass     string 
 }
 
 func NewSemanticAnalyser() *SemanticAnalyser {
@@ -106,8 +121,10 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 }
 
 func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
-	return type1 == type2
-	// TODO: handle inheritance when implemented
+	if type1 == type2{
+		return true
+	}
+	// I will implement this later (I need the inheritance graph)
 }
 
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
