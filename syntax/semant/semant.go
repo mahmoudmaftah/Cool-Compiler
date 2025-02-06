@@ -6,73 +6,45 @@ import (
 	"fmt"
 )
 
-
-
-
-
-
 // For the semant we will use feature interface for (semantic analysis)
 type Feature interface {
-    GetName() string
-    GetType() string
+	GetName() string
+	GetType() string
 }
 
 type Method struct {
-    name     string
-    retType  string
-    formals  []*ast.Formal
-    body     ast.Expression
-    astNode  *ast.Method
+	name    string
+	retType string
+	formals []*ast.Formal
+	body    ast.Expression
+	astNode *ast.Method
 }
 
 func (m *Method) GetName() string { return m.name }
 func (m *Method) GetType() string { return m.retType }
 
 type Attribute struct {
-    name     string
-    attrType string
-    init     ast.Expression
-    astNode  *ast.Attribute
+	name     string
+	attrType string
+	init     ast.Expression
+	astNode  *ast.Attribute
 }
 
 func (a *Attribute) GetName() string { return a.name }
 func (a *Attribute) GetType() string { return a.attrType }
 
-
-
-
-
-
-
-
-
-
 type ClassNode struct {
-    name     string
-    parent   string
-    features map[string]Feature
-    methods  map[string]*Method
-    attrs    map[string]*Attribute
+	name     string
+	parent   string
+	features map[string]Feature
+	methods  map[string]*Method
+	attrs    map[string]*Attribute
 }
 
 type InheritanceGraph struct {
-    classes map[string]*ClassNode
-    roots   []string  // Classes that inherit directly from Object
+	classes map[string]*ClassNode
+	roots   []string // Classes that inherit directly from Object
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 type SymbolTable struct {
 	symbols map[string]*SymbolEntry
@@ -110,143 +82,167 @@ type SemanticAnalyser struct {
 	globalSymbolTable *SymbolTable
 	errors            []string
 	inheritanceGraph  *InheritanceGraph
-    currentClass     string 
+	currentClass      string
 }
 
 func NewSemanticAnalyser() *SemanticAnalyser {
 	return &SemanticAnalyser{
 		globalSymbolTable: NewSymbolTable(nil),
-		inheritanceGraph:  &InheritanceGraph{
-			classes: make(map[string]*ClassNode), 
-			roots: []string{"Object"},
+		inheritanceGraph: &InheritanceGraph{
+			classes: make(map[string]*ClassNode),
+			roots:   []string{"Object"},
 		},
-		errors:            []string{},
+		errors: []string{},
 	}
 }
 
-
-
-
-
-
-
 func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
-    // Add basic classes (Object)
-    sa.inheritanceGraph.classes["Object"] = &ClassNode{
-        name:     "Object",
-        parent:   "",
-        features: make(map[string]Feature),
-        methods:  make(map[string]*Method),
-        attrs:    make(map[string]*Attribute),
-    }
+	// Add basic classes (Object)
+	sa.inheritanceGraph.classes["Object"] = &ClassNode{
+		name:     "Object",
+		parent:   "",
+		features: make(map[string]Feature),
+		methods:  make(map[string]*Method),
+		attrs:    make(map[string]*Attribute),
+	}
 
-    // Add other basic classes (IO, Int, String, Bool)
-    basicClasses := []string{"IO", "Int", "String", "Bool"}
-    for _, className := range basicClasses {
-        sa.inheritanceGraph.classes[className] = &ClassNode{
-            name:     className,
-            parent:   "Object",
-            features: make(map[string]Feature),
-            methods:  make(map[string]*Method),
-            attrs:    make(map[string]*Attribute),
-        }
-    }
+	// Add other basic classes (IO, Int, String, Bool)
+	basicClasses := []string{"IO", "Int", "String", "Bool"}
+	for _, className := range basicClasses {
+		sa.inheritanceGraph.classes[className] = &ClassNode{
+			name:     className,
+			parent:   "Object",
+			features: make(map[string]Feature),
+			methods:  make(map[string]*Method),
+			attrs:    make(map[string]*Attribute),
+		}
+	}
 
-    // Add user-defined classes
-    for _, class := range program.Classes {
-        parentName := "Object"
-        if class.Parent != nil {
-            parentName = class.Parent.Value
-        }
+	// Add user-defined classes
+	for _, class := range program.Classes {
+		parentName := "Object"
+		if class.Parent != nil {
+			parentName = class.Parent.Value
+		}
 
-        classNode := &ClassNode{
-            name:     class.Name.Value,
-            parent:   parentName,
-            features: make(map[string]Feature),
-            methods:  make(map[string]*Method),
-            attrs:    make(map[string]*Attribute),
-        }
+		classNode := &ClassNode{
+			name:     class.Name.Value,
+			parent:   parentName,
+			features: make(map[string]Feature),
+			methods:  make(map[string]*Method),
+			attrs:    make(map[string]*Attribute),
+		}
 
-        // Add features to the class node
-        for _, feature := range class.Features {
-            switch f := feature.(type) {
-            case *ast.Method:
-                method := &Method{
-                    name:    f.Name.Value,
-                    retType: f.TypeDecl.Value,
-                    formals: f.Formals,
-                    body:    f.Body,
-                    astNode: f,
-                }
-                classNode.features[method.name] = method
-                classNode.methods[method.name] = method
-            case *ast.Attribute:
-                attr := &Attribute{
-                    name:     f.Name.Value,
-                    attrType: f.TypeDecl.Value,
-                    init:     f.Init,
-                    astNode:  f,
-                }
-                classNode.features[attr.name] = attr
-                classNode.attrs[attr.name] = attr
-            }
-        }
+		// Add features to the class node
+		for _, feature := range class.Features {
+			switch f := feature.(type) {
+			case *ast.Method:
+				method := &Method{
+					name:    f.Name.Value,
+					retType: f.TypeDecl.Value,
+					formals: f.Formals,
+					body:    f.Body,
+					astNode: f,
+				}
+				classNode.features[method.name] = method
+				classNode.methods[method.name] = method
+			case *ast.Attribute:
+				attr := &Attribute{
+					name:     f.Name.Value,
+					attrType: f.TypeDecl.Value,
+					init:     f.Init,
+					astNode:  f,
+				}
+				classNode.features[attr.name] = attr
+				classNode.attrs[attr.name] = attr
+			}
+		}
 
-        sa.inheritanceGraph.classes[class.Name.Value] = classNode
-        if parentName == "Object" {
-            sa.inheritanceGraph.roots = append(sa.inheritanceGraph.roots, class.Name.Value)
-        }
-    }
+		sa.inheritanceGraph.classes[class.Name.Value] = classNode
+		if parentName == "Object" {
+			sa.inheritanceGraph.roots = append(sa.inheritanceGraph.roots, class.Name.Value)
+		}
+	}
 }
 
+func (sa *SemanticAnalyser) validateInheritanceGraph() {
+	visited := make(map[string]bool)
+	temporary := make(map[string]bool)
 
+	var detectCycle func(className string) bool
+	detectCycle = func(className string) bool {
+		if temporary[className] {
+			sa.errors = append(sa.errors, fmt.Sprintf("Inheritance cycle detected involving class %s", className))
+			return true
+		}
+		if visited[className] {
+			return false
+		}
+
+		temporary[className] = true
+		node := sa.inheritanceGraph.classes[className]
+		if node.parent != "" && detectCycle(node.parent) {
+			return true
+		}
+		delete(temporary, className)
+		visited[className] = true
+		return false
+	}
+
+	for className := range sa.inheritanceGraph.classes {
+		if !visited[className] {
+			detectCycle(className)
+		}
+	}
+}
+
+func (sa *SemanticAnalyser) validateMainClass() {
+	mainClass, exists := sa.inheritanceGraph.classes["Main"]
+	if !exists {
+		sa.errors = append(sa.errors, "Program is missing Main class")
+		return
+	}
+
+	mainMethod, exists := mainClass.methods["main"]
+	if !exists {
+		sa.errors = append(sa.errors, "Main class is missing main method")
+		return
+	}
+
+	if len(mainMethod.formals) > 0 {
+		sa.errors = append(sa.errors, "main method should not have any parameters")
+	}
+}
 
 func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
-	if type1 == type2{
+	if type1 == type2 {
 		return true
 	}
 	if type1 == "SELF_TYPE" {
-        if type2 == "SELF_TYPE" {
-            return true
-        }
-        type1 = sa.currentClass
-    }
-    if type2 == "SELF_TYPE" {
-        type2 = sa.currentClass
-    }
-
+		if type2 == "SELF_TYPE" {
+			return true
+		}
+		type1 = sa.currentClass
+	}
+	if type2 == "SELF_TYPE" {
+		type2 = sa.currentClass
+	}
 
 	// Walk the inheritance graph to check if type1 is a subtype of type2
 	current := type1
-    for current != "" {
-        if current == type2 {
-            return true
-        }
-        node, exists := sa.inheritanceGraph.classes[current]
-        if !exists {
-            return false
-        }
-        current = node.parent
-    }
-    return false
+	for current != "" {
+		if current == type2 {
+			return true
+		}
+		node, exists := sa.inheritanceGraph.classes[current]
+		if !exists {
+			return false
+		}
+		current = node.parent
+	}
+	return false
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func (sa *SemanticAnalyser) Errors() []string {
 	return sa.errors
@@ -261,7 +257,7 @@ func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
 func (sa *SemanticAnalyser) typeCheck(program *ast.Program) {
 	for _, class := range program.Classes {
 		st := sa.globalSymbolTable.symbols[class.Name.Value].Scope
-		sa.typeCheckClass(&class, st)
+		sa.typeCheckClass(class, st)
 	}
 }
 
@@ -277,33 +273,77 @@ func (sa *SemanticAnalyser) typeCheckClass(cls *ast.Class, st *SymbolTable) {
 }
 
 func (sa *SemanticAnalyser) typeCheckAttribute(attribute *ast.Attribute, st *SymbolTable) {
-	if attribute.Expression != nil {
-		expressionType := sa.getExpressionType(attribute.Expression, st)
-		if expressionType != attribute.TypeDecl.Value {
-			sa.errors = append(sa.errors, fmt.Sprintf("attribute %s cannot be of type %s, expected %s", attribute.Name.Value, expressionType, attribute.TypeDecl.Value))
+
+	if _, exists := sa.inheritanceGraph.classes[attribute.TypeDecl.Value]; !exists {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Attribute %s has undefined type %s",
+			attribute.Name.Value, attribute.TypeDecl.Value))
+		return
+	}
+
+	if attribute.Init != nil {
+		initType := sa.getExpressionType(attribute.Init, st)
+		if !sa.isTypeConformant(initType, attribute.TypeDecl.Value) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Attribute %s initialization type %s does not conform to declared type %s",
+				attribute.Name.Value, initType, attribute.TypeDecl.Value))
 		}
 	}
 
 }
 
 func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable) {
-	methodSt := st.symbols[method.Name.Value].Scope
+	methodSt := NewSymbolTable(st)
+
+	// we will first check for duplicate formal parameters
+	seenParams := make(map[string]bool)
 	for _, formal := range method.Formals {
-		if _, ok := methodSt.Lookup(formal.Name.Value); ok {
-			sa.errors = append(sa.errors, fmt.Sprintf("argument %s in method %s is already defined", formal.Name.Value, method.Name.Value))
+		if seenParams[formal.Name.Value] {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Formal parameter %s is multiply defined in method %s",
+				formal.Name.Value, method.Name.Value))
+			continue
+		}
+		seenParams[formal.Name.Value] = true
+
+		// Check formal parameter type exists
+		if _, exists := sa.inheritanceGraph.classes[formal.TypeDecl.Value]; !exists {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Formal parameter %s has undefined type %s in method %s",
+				formal.Name.Value, formal.TypeDecl.Value, method.Name.Value))
 			continue
 		}
 
-		methodSt.parent.AddEntry(formal.Name.Value, &SymbolEntry{Token: formal.Token, Type: formal.TypeDecl.Value})
+		// Add formal to method scope
+		methodSt.AddEntry(formal.Name.Value, &SymbolEntry{
+			Type:  formal.TypeDecl.Value,
+			Token: formal.Token,
+		})
 	}
 
-	methodExpressionType := sa.getExpressionType(method.Expression, methodSt)
-	if methodExpressionType != method.TypeDecl.Value {
-		sa.errors = append(sa.errors, fmt.Sprintf("method %s is expected to return %s, found %s", method.Name.Value, method.TypeDecl.Value, methodExpressionType))
+	// Check if return type exists
+	if _, exists := sa.inheritanceGraph.classes[method.TypeDecl.Value]; !exists && method.TypeDecl.Value != "SELF_TYPE" {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Method %s has undefined return type %s",
+			method.Name.Value, method.TypeDecl.Value))
+		return
+	}
+
+	// Type check method body
+	bodyType := sa.getExpressionType(method.Body, methodSt)
+
+	// Handle SELF_TYPE in return type
+	expectedType := method.TypeDecl.Value
+	if expectedType == "SELF_TYPE" {
+		expectedType = sa.currentClass
+	}
+
+	if !sa.isTypeConformant(bodyType, expectedType) {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Method %s body type %s does not conform to declared return type %s",
+			method.Name.Value, bodyType, method.TypeDecl.Value))
 	}
 }
-
-
 
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
 	switch e := expression.(type) {
