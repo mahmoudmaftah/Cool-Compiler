@@ -6,18 +6,73 @@ import (
 	"fmt"
 )
 
+
+
+
+
+
+// For the semant we will use feature interface for (semantic analysis)
+type Feature interface {
+    GetName() string
+    GetType() string
+}
+
+type Method struct {
+    name     string
+    retType  string
+    formals  []*ast.Formal
+    body     ast.Expression
+    astNode  *ast.Method
+}
+
+func (m *Method) GetName() string { return m.name }
+func (m *Method) GetType() string { return m.retType }
+
+type Attribute struct {
+    name     string
+    attrType string
+    init     ast.Expression
+    astNode  *ast.Attribute
+}
+
+func (a *Attribute) GetName() string { return a.name }
+func (a *Attribute) GetType() string { return a.attrType }
+
+
+
+
+
+
+
+
+
+
 type ClassNode struct {
     name     string
     parent   string
-    features map[string]*ast.Feature
-    methods  map[string]*ast.Method
-    attrs    map[string]*ast.Attribute
+    features map[string]Feature
+    methods  map[string]*Method
+    attrs    map[string]*Attribute
 }
 
 type InheritanceGraph struct {
     classes map[string]*ClassNode
     roots   []string  // Classes that inherit directly from Object
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 type SymbolTable struct {
 	symbols map[string]*SymbolEntry
@@ -61,9 +116,137 @@ type SemanticAnalyser struct {
 func NewSemanticAnalyser() *SemanticAnalyser {
 	return &SemanticAnalyser{
 		globalSymbolTable: NewSymbolTable(nil),
+		inheritanceGraph:  &InheritanceGraph{
+			classes: make(map[string]*ClassNode), 
+			roots: []string{"Object"},
+		},
 		errors:            []string{},
 	}
 }
+
+
+
+
+
+
+
+func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
+    // Add basic classes (Object)
+    sa.inheritanceGraph.classes["Object"] = &ClassNode{
+        name:     "Object",
+        parent:   "",
+        features: make(map[string]Feature),
+        methods:  make(map[string]*Method),
+        attrs:    make(map[string]*Attribute),
+    }
+
+    // Add other basic classes (IO, Int, String, Bool)
+    basicClasses := []string{"IO", "Int", "String", "Bool"}
+    for _, className := range basicClasses {
+        sa.inheritanceGraph.classes[className] = &ClassNode{
+            name:     className,
+            parent:   "Object",
+            features: make(map[string]Feature),
+            methods:  make(map[string]*Method),
+            attrs:    make(map[string]*Attribute),
+        }
+    }
+
+    // Add user-defined classes
+    for _, class := range program.Classes {
+        parentName := "Object"
+        if class.Parent != nil {
+            parentName = class.Parent.Value
+        }
+
+        classNode := &ClassNode{
+            name:     class.Name.Value,
+            parent:   parentName,
+            features: make(map[string]Feature),
+            methods:  make(map[string]*Method),
+            attrs:    make(map[string]*Attribute),
+        }
+
+        // Add features to the class node
+        for _, feature := range class.Features {
+            switch f := feature.(type) {
+            case *ast.Method:
+                method := &Method{
+                    name:    f.Name.Value,
+                    retType: f.TypeDecl.Value,
+                    formals: f.Formals,
+                    body:    f.Body,
+                    astNode: f,
+                }
+                classNode.features[method.name] = method
+                classNode.methods[method.name] = method
+            case *ast.Attribute:
+                attr := &Attribute{
+                    name:     f.Name.Value,
+                    attrType: f.TypeDecl.Value,
+                    init:     f.Init,
+                    astNode:  f,
+                }
+                classNode.features[attr.name] = attr
+                classNode.attrs[attr.name] = attr
+            }
+        }
+
+        sa.inheritanceGraph.classes[class.Name.Value] = classNode
+        if parentName == "Object" {
+            sa.inheritanceGraph.roots = append(sa.inheritanceGraph.roots, class.Name.Value)
+        }
+    }
+}
+
+
+
+func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
+	if type1 == type2{
+		return true
+	}
+	if type1 == "SELF_TYPE" {
+        if type2 == "SELF_TYPE" {
+            return true
+        }
+        type1 = sa.currentClass
+    }
+    if type2 == "SELF_TYPE" {
+        type2 = sa.currentClass
+    }
+
+
+	// Walk the inheritance graph to check if type1 is a subtype of type2
+	current := type1
+    for current != "" {
+        if current == type2 {
+            return true
+        }
+        node, exists := sa.inheritanceGraph.classes[current]
+        if !exists {
+            return false
+        }
+        current = node.parent
+    }
+    return false
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func (sa *SemanticAnalyser) Errors() []string {
 	return sa.errors
@@ -120,12 +303,7 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 	}
 }
 
-func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
-	if type1 == type2{
-		return true
-	}
-	// I will implement this later (I need the inheritance graph)
-}
+
 
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
 	switch e := expression.(type) {
@@ -145,8 +323,8 @@ func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *Sym
 		return sa.GetNewExpressionType(e, st)
 	case *ast.LetExpression:
 		return sa.GetLetExpressionType(e, st)
-	case *ast.Assignment:
-		return sa.GetAssignmentExpressionType(e, st)
+	// case *ast.Assignment:
+	// 	return sa.GetAssignmentExpressionType(e, st)
 	case *ast.UnaryExpression:
 		return sa.GetUnaryExpressionType(e, st)
 	case *ast.BinaryExpression:
