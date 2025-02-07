@@ -536,9 +536,14 @@ func (p *Parser) parseLetExpression() ast.Expression {
 		binding.Type = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 		if p.peekTokenIs(lexer.ASSIGN) {
-			p.nextToken()
-			p.nextToken()
+			p.nextToken() // move to <-
+			p.nextToken() // move to first token of init expression
+
+			// Parse initialization with higher precedence than comma
 			binding.Init = p.parseExpression(LOWEST)
+			if binding.Init == nil {
+				return nil
+			}
 		}
 
 		expr.Bindings = append(expr.Bindings, binding)
@@ -546,14 +551,14 @@ func (p *Parser) parseLetExpression() ast.Expression {
 		if !p.peekTokenIs(lexer.COMMA) {
 			break
 		}
-		p.nextToken()
+		p.nextToken() // consume the comma
 	}
 
 	if !p.expectAndPeek(lexer.IN) {
 		return nil
 	}
 
-	p.nextToken()
+	p.nextToken() // move past IN
 	expr.In = p.parseExpression(LOWEST)
 
 	return expr

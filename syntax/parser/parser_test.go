@@ -499,3 +499,89 @@ func TestNestedExpressions(t *testing.T) {
 
 
 
+
+
+func TestLetExpressions(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {
+            // Basic let with no initialization
+            input: `let x: Int in x + 1`,
+            expected: "let x:Int in (x + 1)",
+        },
+        {
+            // Let with initialization
+            input: `let x: Int <- 5 in x + 1`,
+            expected: "let x:Int<-5 in (x + 1)",
+        },
+        {
+            // Multiple bindings
+            input: `let x: Int <- 5, y: String <- "hello" in x + y.length()`,
+            expected: "let x:Int<-5,y:String<-\"hello\" in (x + y.length())",
+        },
+        {
+            // Mix of initialized and uninitialized bindings
+            input: `let x: Int <- 5, y: Int, z: String <- "hello" in x + y`,
+            expected: "let x:Int<-5,y:Int,z:String<-\"hello\" in (x + y)",
+        },
+        {
+            // Nested let expressions
+            input: `let x: Int <- 1 in let y: Int <- x + 1 in x + y`,
+            expected: "let x:Int<-1 in let y:Int<-(x + 1) in (x + y)",
+        },
+        {
+            // Let with complex initialization
+            input: `let x: Int <- if true then 1 else 2 fi in x + 1`,
+            expected: "let x:Int<-if true then 1 else 2 fi in (x + 1)",
+        },
+        {
+            // Let with multiple types
+            input: `let x: Int <- 1, y: Bool <- true, z: String <- "hello" in x`,
+            expected: "let x:Int<-1,y:Bool<-true,z:String<-\"hello\" in x",
+        },
+        {
+            // Let with self type
+            input: `let x: SELF_TYPE <- self in x.method()`,
+            expected: "let x:SELF_TYPE<-self in x.method()",
+        },
+        {
+            // Let within a block
+            input: `{
+                let x: Int <- 1 in x + 1;
+                let y: Int <- 2 in y + 2
+            }`,
+            expected: "{ let x:Int<-1 in (x + 1); let y:Int<-2 in (y + 2) }",
+        },
+        {
+            // Let with method call initialization
+            input: `let x: Int <- foo(), y: String <- bar(1, 2) in x + y.length()`,
+            expected: "let x:Int<-foo(),y:String<-bar(1,2) in (x + y.length())",
+        },
+        {
+            // Let with complex nested expressions
+            input: `let x: Int <- let y: Int <- 1 in y + 1 in x * 2`,
+            expected: "let x:Int<-let y:Int<-1 in (y + 1) in (x * 2)",
+        },
+        {
+            // Let with multiple nested complex initializations
+            input: `let x: Int <- if true then 1 else 2 fi,
+                       y: Int <- while false loop 1 pool,
+                       z: Int <- { 1; 2; 3 }
+                   in x + y + z`,
+            expected: "let x:Int<-if true then 1 else 2 fi,y:Int<-while false loop 1 pool,z:Int<-{1;2;3} in ((x + y) + z)",
+        },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        expression := parser.parseExpression(START)
+        checkParserErrors(t, parser, i)
+
+        actual := SerializeExpression(expression)
+        if actual != tt.expected {
+            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+        }
+    }
+}

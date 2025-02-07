@@ -96,6 +96,7 @@ func NewSemanticAnalyser() *SemanticAnalyser {
 	}
 }
 
+// buildd the inheritance graph
 func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 	// Add basic classes (Object)
 	sa.inheritanceGraph.classes["Object"] = &ClassNode{
@@ -165,6 +166,7 @@ func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 	}
 }
 
+// Validates if the inheritance graph is a directed acyclic graph
 func (sa *SemanticAnalyser) validateInheritanceGraph() {
 	visited := make(map[string]bool)
 	temporary := make(map[string]bool)
@@ -196,6 +198,7 @@ func (sa *SemanticAnalyser) validateInheritanceGraph() {
 	}
 }
 
+// Validates presence of the main class and main method
 func (sa *SemanticAnalyser) validateMainClass() {
 	mainClass, exists := sa.inheritanceGraph.classes["Main"]
 	if !exists {
@@ -214,6 +217,7 @@ func (sa *SemanticAnalyser) validateMainClass() {
 	}
 }
 
+// Checks if type1 conforms to type2 (i.e. type1 is a subtype of type2)
 func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
 	if type1 == type2 {
 		return true
@@ -244,14 +248,57 @@ func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
 
 }
 
+// Returns the list of errors encountered during semantic analysis
 func (sa *SemanticAnalyser) Errors() []string {
 	return sa.errors
 }
 
 func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
+	sa.initInheritanceGraph(program)
+	sa.validateInheritanceGraph()
+
 	sa.buildClassesSymboltables(program)
 	sa.buildSymboltables(program)
+
+	sa.validateMainClass()
 	sa.typeCheck(program)
+}
+
+func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
+	sa.globalSymbolTable.AddEntry("Object", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Object"}})
+	sa.globalSymbolTable.AddEntry("Int", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Int"}})
+	sa.globalSymbolTable.AddEntry("String", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "String"}})
+	sa.globalSymbolTable.AddEntry("Bool", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Bool"}})
+
+	for _, class := range program.Classes {
+		if _, ok := sa.globalSymbolTable.Lookup(class.Name.Value); ok {
+			sa.errors = append(sa.errors, fmt.Sprintf("class %s is already defined", class.Name.Value))
+			continue
+		}
+
+		sa.globalSymbolTable.AddEntry(class.Name.Value, &SymbolEntry{Type: "Class", Token: class.Name.Token})
+	}
+}
+
+func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
+	for _, class := range program.Classes {
+		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
+		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
+
+		for _, feature := range class.Features {
+			switch f := feature.(type) {
+			case *ast.Attribute:
+				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
+					sa.errors = append(sa.errors, fmt.Sprintf("attribute %s is already defined in class %s", f.Name.Value, class.Name.Value))
+					continue
+				}
+				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, AttrType: f.TypeDecl})
+			case *ast.Method:
+				methodST := NewSymbolTable(classEntry.Scope)
+				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, Scope: methodST, Method: f})
+			}
+		}
+	}
 }
 
 func (sa *SemanticAnalyser) typeCheck(program *ast.Program) {
@@ -363,8 +410,8 @@ func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *Sym
 		return sa.GetNewExpressionType(e, st)
 	case *ast.LetExpression:
 		return sa.GetLetExpressionType(e, st)
-	// case *ast.Assignment:
-	// 	return sa.GetAssignmentExpressionType(e, st)
+	case *ast.Assignment:
+		return sa.GetAssignmentExpressionType(e, st)
 	case *ast.UnaryExpression:
 		return sa.GetUnaryExpressionType(e, st)
 	case *ast.BinaryExpression:
@@ -407,49 +454,8 @@ func (sa *SemanticAnalyser) getIfExpressionType(ifexpr *ast.IfExpression, st *Sy
 	constype := sa.getExpressionType(ifexpr.Consequence, st)
 	alttype := sa.getExpressionType(ifexpr.Alternative, st)
 
-	if constype != alttype {
-		sa.errors = append(sa.errors, fmt.Sprintf("ambiguous if statement return type %s vs %s", constype, alttype))
-		return "Object"
-	}
-
-	return constype
-}
-
-func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
-	sa.globalSymbolTable.AddEntry("Object", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Object"}})
-	sa.globalSymbolTable.AddEntry("Int", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Int"}})
-	sa.globalSymbolTable.AddEntry("String", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "String"}})
-	sa.globalSymbolTable.AddEntry("Bool", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Bool"}})
-
-	for _, class := range program.Classes {
-		if _, ok := sa.globalSymbolTable.Lookup(class.Name.Value); ok {
-			sa.errors = append(sa.errors, fmt.Sprintf("class %s is already defined", class.Name.Value))
-			continue
-		}
-
-		sa.globalSymbolTable.AddEntry(class.Name.Value, &SymbolEntry{Type: "Class", Token: class.Name.Token})
-	}
-}
-
-func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
-	for _, class := range program.Classes {
-		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
-		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
-
-		for _, feature := range class.Features {
-			switch f := feature.(type) {
-			case *ast.Attribute:
-				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
-					sa.errors = append(sa.errors, fmt.Sprintf("attribute %s is already defined in class %s", f.Name.Value, class.Name.Value))
-					continue
-				}
-				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, AttrType: f.TypeDecl})
-			case *ast.Method:
-				methodST := NewSymbolTable(classEntry.Scope)
-				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, Scope: methodST, Method: f})
-			}
-		}
-	}
+	// Just like the case expression, we need to find the least upper bound of the types
+	return sa.leastUpperBound(constype, alttype)
 }
 
 func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *SymbolTable) string {
@@ -462,22 +468,89 @@ func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *Symb
 }
 
 func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *SymbolTable) string {
-	for _, b := range le.Bindings {
-		sa.CheckBindingType(b, st)
+	// Create a new scope for this let expression
+	letScope := NewSymbolTable(st)
+
+	// Process each binding in order
+	for _, binding := range le.Bindings {
+		// First verify the declared type exists
+		if binding.Type.Value != "SELF_TYPE" {
+			if _, exists := sa.inheritanceGraph.classes[binding.Type.Value]; !exists {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Let binding uses undefined type %s",
+					binding.Type.Value))
+				continue
+			}
+		}
+
+		// If there's an initialization expression
+		var initType string
+		if binding.Init != nil {
+			// Type check the initialization using the current scope
+			// This allows init expressions to reference previous bindings
+			initType = sa.getExpressionType(binding.Init, letScope)
+
+			// Handle SELF_TYPE in initialization
+			if initType == "SELF_TYPE" {
+				initType = sa.currentClass
+			}
+
+			declaredType := binding.Type.Value
+			if declaredType == "SELF_TYPE" {
+				declaredType = sa.currentClass
+			}
+
+			// Check type conformance
+			if !sa.isTypeConformant(initType, declaredType) {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Let initialization type %s does not conform to declared type %s",
+					initType, binding.Type.Value))
+			}
+		}
+
+		// Add the binding to the scope for use by subsequent initializations
+		// and the body expression
+		letScope.AddEntry(binding.Identifier.Value, &SymbolEntry{
+			Type:  binding.Type.Value,
+			Token: binding.Identifier.Token,
+		})
 	}
-	return sa.getExpressionType(le.In, st)
+
+	// Type check the body expression in the scope with all bindings
+	return sa.getExpressionType(le.In, letScope)
 }
 
-func (sa *SemanticAnalyser) CheckBindingType(b *ast.Binding, st *SymbolTable) {
-	exprType := sa.getExpressionType(b.Init, st)
-	if exprType != b.Type.Value {
-		sa.errors = append(sa.errors, fmt.Sprintf("Let binding with wrong type %s", exprType))
-	}
-}
-
+// TO VERIFY
 func (sa *SemanticAnalyser) GetAssignmentExpressionType(a *ast.Assignment, st *SymbolTable) string {
 	// TODO: look for object in symbol table walking the scope and then check type
-	return ""
+	entry, exists := st.Lookup(a.Name.Value)
+	if !exists {
+		sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s in assignment", a.Name.Value))
+		return "Object"
+	}
+
+	// Get the type of the expression being assigned
+	exprType := sa.getExpressionType(a.Value, st)
+
+	// Special handling for SELF_TYPE
+	if entry.Type == "SELF_TYPE" {
+		if !sa.isTypeConformant(exprType, sa.currentClass) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Type %s of assigned expression does not conform to %s",
+				exprType, entry.Type))
+		}
+		return exprType
+	}
+
+	// Check type conformance
+	if !sa.isTypeConformant(exprType, entry.Type) {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Type %s of assigned expression does not conform to identifier type %s",
+			exprType, entry.Type))
+		return entry.Type
+	}
+
+	return exprType
 }
 
 func (sa *SemanticAnalyser) GetUnaryExpressionType(uexpr *ast.UnaryExpression, st *SymbolTable) string {
@@ -505,7 +578,7 @@ func isComparable(t string) bool {
 
 func (sa *SemanticAnalyser) GetBinaryExpressionType(be *ast.BinaryExpression, st *SymbolTable) string {
 	leftType := sa.getExpressionType(be.Left, st)
-	rightType := sa.getExpressionType(be.Left, st)
+	rightType := sa.getExpressionType(be.Right, st)
 	switch be.Operator {
 	case "+", "*", "/", "-":
 		if leftType != "Int" || rightType != "Int" {
@@ -524,6 +597,170 @@ func (sa *SemanticAnalyser) GetBinaryExpressionType(be *ast.BinaryExpression, st
 }
 
 func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *SymbolTable) string {
-	// TODO: Handle case expression correctly. It requires returning the LCA type of all its sub expressions
+	// First evaluate the type of the case expression and check for void
+	exprType := sa.getExpressionType(ce.Expr, st)
+	if exprType == "void" {
+		sa.errors = append(sa.errors, "Case expression cannot be void")
+		return "Object"
+	}
+
+	// Keep track of types seen in branches to detect duplicates
+	seenTypes := make(map[string]bool)
+
+	// Collect types from all branches
+	branchTypes := make([]string, 0)
+
+	for _, branch := range ce.Branches {
+		// Check for duplicate types in branches
+		if seenTypes[branch.Type.Value] {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Duplicate branch type %s in case expression",
+				branch.Type.Value))
+			continue
+		}
+		seenTypes[branch.Type.Value] = true
+
+		// Verify the branch type exists
+		if _, exists := sa.inheritanceGraph.classes[branch.Type.Value]; !exists {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Undefined type %s in case branch",
+				branch.Type.Value))
+			continue
+		}
+
+		// Create new scope for the branch
+		branchST := NewSymbolTable(st)
+		branchST.AddEntry(branch.Pattern.Value, &SymbolEntry{
+			Type:  branch.Type.Value,
+			Token: branch.Pattern.Token,
+		})
+
+		// Get type of branch expression
+		branchType := sa.getExpressionType(branch.Expression, branchST)
+		branchTypes = append(branchTypes, branchType)
+	}
+
+	// The type of a case expression is the least upper bound of all branch types
+	if len(branchTypes) == 0 {
+		return "Object"
+	}
+
+	// Find least upper bound of all branch types
+	resultType := branchTypes[0]
+	for i := 1; i < len(branchTypes); i++ {
+		resultType = sa.leastUpperBound(resultType, branchTypes[i])
+	}
+
+	return resultType
+}
+
+func (sa *SemanticAnalyser) leastUpperBound(type1, type2 string) string {
+	// If either type is SELF_TYPE, use the current class
+	if type1 == "SELF_TYPE" {
+		type1 = sa.currentClass
+	}
+	if type2 == "SELF_TYPE" {
+		type2 = sa.currentClass
+	}
+
+	// If types are the same, that's the LUB
+	if type1 == type2 {
+		return type1
+	}
+
+	// Walk up the inheritance tree of both types until finding a common ancestor
+	ancestors1 := sa.getAncestors(type1)
+	ancestors2 := sa.getAncestors(type2)
+
+	// Find first common ancestor
+	for _, t1 := range ancestors1 {
+		for _, t2 := range ancestors2 {
+			if t1 == t2 {
+				return t1
+			}
+		}
+	}
+
 	return "Object"
+}
+
+// Helper function to get all ancestors of a type including itself
+func (sa *SemanticAnalyser) getAncestors(typeName string) []string {
+	ancestors := make([]string, 0)
+	current := typeName
+
+	for current != "" {
+		ancestors = append(ancestors, current)
+		if node, exists := sa.inheritanceGraph.classes[current]; exists {
+			current = node.parent
+		} else {
+			break
+		}
+	}
+
+	return ancestors
+}
+
+// Implement dispatch expression type checking
+func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression, st *SymbolTable) string {
+	// Get type of object being dispatched on
+	var objectType string
+	if de.Object != nil {
+		objectType = sa.getExpressionType(de.Object, st)
+	} else {
+		objectType = sa.currentClass // Implicit self
+	}
+
+	// Handle static dispatch
+	if de.StaticType != nil {
+		if !sa.isTypeConformant(objectType, de.StaticType.Value) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Expression of type %s does not conform to declared static dispatch type %s",
+				objectType, de.StaticType.Value))
+			return "Object"
+		}
+		objectType = de.StaticType.Value
+	}
+
+	// Look up the method in the class
+	classNode, exists := sa.inheritanceGraph.classes[objectType]
+	if !exists {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Dispatch on undefined type %s",
+			objectType))
+		return "Object"
+	}
+
+	method, exists := classNode.methods[de.Method.Value]
+	if !exists {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Undefined method %s in type %s",
+			de.Method.Value, objectType))
+		return "Object"
+	}
+
+	// Check number of arguments
+	if len(de.Arguments) != len(method.formals) {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Method %s called with wrong number of arguments. Expected %d, got %d",
+			de.Method.Value, len(method.formals), len(de.Arguments)))
+		return "Object"
+	}
+
+	// Type check arguments
+	for i, arg := range de.Arguments {
+		argType := sa.getExpressionType(arg, st)
+		if !sa.isTypeConformant(argType, method.formals[i].TypeDecl.Value) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Argument %d of type %s does not conform to formal parameter type %s",
+				i+1, argType, method.formals[i].TypeDecl.Value))
+		}
+	}
+
+	// Handle SELF_TYPE in return type
+	if method.retType == "SELF_TYPE" {
+		return objectType
+	}
+
+	return method.retType
 }

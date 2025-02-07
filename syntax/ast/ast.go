@@ -213,3 +213,12 @@ type DispatchExpression struct {
 
 func (de *DispatchExpression) TokenLiteral() string { return de.Token.Literal }
 func (de *DispatchExpression) expressionNode()      {}
+
+type Assignment struct {
+	Token lexer.Token
+	Name  *ObjectIdentifier
+	Value Expression
+}
+
+func (a *Assignment) TokenLiteral() string { return a.Token.Literal }
+func (a *Assignment) expressionNode()      {}
