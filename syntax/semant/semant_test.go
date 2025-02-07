@@ -1,8 +1,8 @@
 package semant
 
 import (
-	"cool-compiler/parser"
 	"cool-compiler/lexer"
+	"cool-compiler/parser"
 	"strings"
 	"testing"
 )
@@ -53,6 +53,22 @@ func TestSemanticAnalysis(t *testing.T) {
 		{
 			name: "Let with type checking",
 			input: `
+                class Main {
+                    main(): Object {
+                        let x: Int <- "string" in x + 1
+                    };
+                };
+            `,
+			hasError: true,
+			errorMsg: "does not conform to declared type",
+		},
+		{
+			name: "Formals with same name",
+			input: `
+				class Test {
+					x: Int;
+					y(a: Int, a: Bool): Int { a };
+				};
                 class Main {
                     main(): Object {
                         let x: Int <- "string" in x + 1
@@ -189,9 +205,121 @@ func TestSemanticAnalysis(t *testing.T) {
 			hasError := len(analyzer.Errors()) > 0
 			if hasError != tt.hasError {
 				t.Errorf("expected hasError=%v, got=%v", tt.hasError, hasError)
+				// print errors
+				for _, err := range analyzer.Errors() {
+					t.Log(err)
+				}
+
 			}
 
 			if tt.hasError && tt.errorMsg != "" {
+				found := false
+				for _, err := range analyzer.Errors() {
+					if strings.Contains(err, tt.errorMsg) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got errors: %v",
+						tt.errorMsg, analyzer.Errors())
+				}
+			}
+		})
+	}
+}
+
+func TestSemanticAnalysis2(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		hasError bool
+		errorMsg string
+	}{
+
+		// {
+		// 	name: "Formals with same name",
+		// 	input: `
+		// 		class Typ {
+		// 			x: Int;
+		// 		}
+
+		// 		class Test {
+		// 			x: Int;
+		// 			y(a: Int, b: Typ): Int { a };
+		// 		};
+		//         class Main {
+		//             main(): Object {
+		//                 let x: Int <- "string" in x + 1
+		//             };
+		//         };
+		//     `,
+		// 	hasError: true,
+		// 	errorMsg: "does not conform to declared type",
+		// },
+
+		// {
+		// 	name: "Cycle inheritance",
+		// 	input: `
+		// 		class A inherits B {
+		// 			x: Int;
+		// 		};
+
+		// 		class B inherits A {
+		// 			y: Int;
+		// 		};
+
+		// 		class Main {
+		// 			main(): Object { 1 };
+		// 		};
+		// 	`,
+		// 	hasError: true,
+		// 	errorMsg: "cycle detected",
+		// },
+
+		// Test type conformance in checking
+		{
+			name: "Type conformance in checking",
+			input: `
+				class A {
+					foo(x: Int): Int { x };
+				};
+				class B inherits A {
+					foo(x: Int): Int { x + 1 };
+				};
+				class Main {
+					main(): Object {
+						let a: A <- new B in a.foo(1)
+					};
+				};
+			`,
+			hasError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := newParserFromInput(tt.input)
+			program := parser.ParseProgram()
+
+			analyzer := NewSemanticAnalyser()
+			analyzer.Analyze(program)
+
+			hasError := len(analyzer.Errors()) > 0
+			if hasError != tt.hasError {
+				t.Errorf("expected hasError=%v, got=%v", tt.hasError, hasError)
+				// print errors
+				for _, err := range analyzer.Errors() {
+					t.Log(err)
+				}
+
+			}
+
+			if tt.hasError && tt.errorMsg != "" {
+				// print errors
+				for _, err := range analyzer.Errors() {
+					t.Log(err)
+				}
 				found := false
 				for _, err := range analyzer.Errors() {
 					if strings.Contains(err, tt.errorMsg) {

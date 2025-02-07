@@ -345,10 +345,11 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 	// we will first check for duplicate formal parameters
 	seenParams := make(map[string]bool)
 	for _, formal := range method.Formals {
+		fmt.Println(formal.Name.Value)
 		if seenParams[formal.Name.Value] {
 			sa.errors = append(sa.errors, fmt.Sprintf(
-				"Formal parameter %s is multiply defined in method %s",
-				formal.Name.Value, method.Name.Value))
+				"Formal parameter %s is multiply defined in method %s from class %s",
+				formal.Name.Value, method.Name.Value, sa.currentClass))
 			continue
 		}
 		seenParams[formal.Name.Value] = true
@@ -356,8 +357,8 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 		// Check formal parameter type exists
 		if _, exists := sa.inheritanceGraph.classes[formal.TypeDecl.Value]; !exists {
 			sa.errors = append(sa.errors, fmt.Sprintf(
-				"Formal parameter %s has undefined type %s in method %s",
-				formal.Name.Value, formal.TypeDecl.Value, method.Name.Value))
+				"Formal parameter %s has undefined type %s in method %s from class %s",
+				formal.Name.Value, formal.TypeDecl.Value, method.Name.Value, sa.currentClass))
 			continue
 		}
 
@@ -378,6 +379,12 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 
 	// Type check method body
 	bodyType := sa.getExpressionType(method.Body, methodSt)
+
+	// fmt.Println(method.Body)
+
+	// print the method name and the body type
+	// fmt.Println(method.Name.Value)
+	// fmt.Println(bodyType)
 
 	// Handle SELF_TYPE in return type
 	expectedType := method.TypeDecl.Value
@@ -420,6 +427,15 @@ func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *Sym
 		return sa.GetCaseExpressionType(e, st)
 	case *ast.IsVoidExpression:
 		return "Bool"
+	case *ast.DispatchExpression:
+		return sa.GetDispatchExpressionType(e, st)
+	case *ast.ObjectIdentifier:
+		a, ok := st.Lookup(e.Value)
+		if !ok {
+			sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s", e.Value))
+			return "Object"
+		}
+		return a.Type
 	default:
 		return "Object"
 	}
