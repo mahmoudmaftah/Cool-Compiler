@@ -399,6 +399,9 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 	}
 }
 
+
+
+
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
 	switch e := expression.(type) {
 	case *ast.IntegerLiteral:

@@ -291,77 +291,73 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 
 // TODO : PARSE METHOD (Will have a set of formals and a body).
 func (p *Parser) parseMethod() *ast.Method {
-	method := &ast.Method{Token: p.curToken}
+    method := &ast.Method{Token: p.curToken}
 
-	// Parse method name (current token should be OBJECTID)
-	if !p.curTokenIs(lexer.OBJECTID) {
-		p.errors = append(p.errors,
-			fmt.Sprintf("Expected method name to be OBJECTID, got %s at line %d col %d",
-				p.curToken.Type, p.curToken.Line, p.curToken.Column))
-		return nil
-	}
-	method.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+    // Parse method name (current token should be OBJECTID)
+    if !p.curTokenIs(lexer.OBJECTID) {
+        p.errors = append(p.errors,
+            fmt.Sprintf("Expected method name to be OBJECTID, got %s at line %d col %d",
+                p.curToken.Type, p.curToken.Line, p.curToken.Column))
+        return nil
+    }
+    method.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
-	// Parse opening parenthesis
-	if !p.expectAndPeek(lexer.LPAREN) {
-		return nil
-	}
+    // Parse opening parenthesis
+    if !p.expectAndPeek(lexer.LPAREN) {
+        return nil
+    }
 
-	// Parse formal parameters
-	method.Formals = []*ast.Formal{}
-	if !p.peekTokenIs(lexer.RPAREN) {
-		p.nextToken()
-		firstFormal := p.parseFormal()
-		if firstFormal != nil {
-			method.Formals = append(method.Formals, firstFormal)
-		}
+    // Parse formal parameters
+    method.Formals = []*ast.Formal{}
+    if !p.peekTokenIs(lexer.RPAREN) {
+        p.nextToken()
+        firstFormal := p.parseFormal()
+        if firstFormal != nil {
+            method.Formals = append(method.Formals, firstFormal)
+        }
 
-		for p.peekTokenIs(lexer.COMMA) {
-			p.nextToken() // consume the comma
-			p.nextToken() // move to the next formal
-			formal := p.parseFormal()
-			if formal != nil {
-				method.Formals = append(method.Formals, formal)
-			}
-		}
-	}
+        for p.peekTokenIs(lexer.COMMA) {
+            p.nextToken() // consume the comma
+            p.nextToken() // move to the next formal
+            formal := p.parseFormal()
+            if formal != nil {
+                method.Formals = append(method.Formals, formal)
+            }
+        }
+    }
 
-	// Parse closing parenthesis
-	if !p.expectAndPeek(lexer.RPAREN) {
-		return nil
-	}
+    // Parse closing parenthesis
+    if !p.expectAndPeek(lexer.RPAREN) {
+        return nil
+    }
 
-	// Parse return type
-	if !p.expectAndPeek(lexer.COLON) {
-		return nil
-	}
+    // Parse return type
+    if !p.expectAndPeek(lexer.COLON) {
+        return nil
+    }
 
-	if !p.expectAndPeek(lexer.TYPEID) {
-		return nil
-	}
-	method.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+    if !p.expectAndPeek(lexer.TYPEID) {
+        return nil
+    }
+    method.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
-	// Parse method body
-	if !p.expectAndPeek(lexer.LBRACE) {
-		return nil
-	}
+    // Parse method body
+    if !p.expectAndPeek(lexer.LBRACE) {
+        return nil
+    }
 
-	p.nextToken()
+    // Parse the body as a block expression
+    method.Body = p.parseBlockExpression()
+    if method.Body == nil {
+        return nil
+    }
 
-	// Handle empty method body
-	if p.curTokenIs(lexer.RBRACE) {
-		return method
-	}
+    // Expect semicolon after the closing brace
+    if !p.expectAndPeek(lexer.SEMI) {
+        return nil
+    }
 
-	// Parse method body expression
-	method.Body = p.parseExpression(LOWEST)
-
-	// Expect closing brace
-	if !p.expectAndPeek(lexer.RBRACE) {
-		return nil
-	}
-
-	return method
+    return method
 }
 
 func (p *Parser) parseFormals() []*ast.Formal {
@@ -490,27 +486,36 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 }
 
 func (p *Parser) parseBlockExpression() ast.Expression {
-	block := &ast.BlockExpression{Token: p.curToken}
+    block := &ast.BlockExpression{Token: p.curToken}
+    block.Expressions = []ast.Expression{}
 
-	p.nextToken()
-	block.Expressions = []ast.Expression{}
+    p.nextToken() // Move past the '{'
 
-	for !p.curTokenIs(lexer.RBRACE) {
-		expr := p.parseExpression(LOWEST)
-		if expr != nil {
-			block.Expressions = append(block.Expressions, expr)
-		}
-		p.nextToken()
+    // Parse expressions until we hit a closing brace
+    for !p.curTokenIs(lexer.RBRACE) {
+        if p.curTokenIs(lexer.EOF) {
+            p.errors = append(p.errors, "unexpected EOF while parsing block")
+            return nil
+        }
 
-		if !p.curTokenIs(lexer.SEMI) && !p.curTokenIs(lexer.RBRACE) {
-			return nil
-		}
-		if p.curTokenIs(lexer.SEMI) {
-			p.nextToken()
-		}
-	}
+        expr := p.parseExpression(LOWEST)
+        if expr == nil {
+            return nil
+        }
+        block.Expressions = append(block.Expressions, expr)
 
-	return block
+        // After an expression we expect either a semicolon or closing brace
+        if !p.peekTokenIs(lexer.RBRACE) {
+            if !p.expectAndPeek(lexer.SEMI) {
+                return nil
+            }
+            p.nextToken() // Move past semicolon
+        } else {
+            p.nextToken() // Move to the closing brace
+        }
+    }
+
+    return block
 }
 
 func (p *Parser) parseLetExpression() ast.Expression {

@@ -288,6 +288,142 @@ func TestFormalParsing(t *testing.T) {
 	}
 }
 
+
+
+
+
+
+func TestMethodParsing2(t *testing.T) {
+    tests := []struct {
+        input               string
+        expectedMethodName  string
+        expectedFormalNames []string
+        expectedFormalTypes []string
+        expectedMethodType  string
+        expectedBody        string
+    }{
+
+		// Passed
+        // {
+        //     input:               "main(): Void { 42; };",
+        //     expectedMethodName:  "main",
+        //     expectedFormalNames: []string{},
+        //     expectedFormalTypes: []string{},
+        //     expectedMethodType:  "Void",
+        //     expectedBody:        "{ 42 }",
+        // },
+
+		// Review
+        // {
+        //     input: `factorial(n: Int): Int {
+        //         if n = 0 then 1 else n * factorial(n-1) fi;
+        //     };`,
+        //     expectedMethodName:  "factorial",
+        //     expectedFormalNames: []string{"n"},
+        //     expectedFormalTypes: []string{"Int"},
+        //     expectedMethodType:  "Int",
+        //     expectedBody:        "{ if (n = 0) then 1 else (n * factorial((n - 1))) fi }",
+        // },
+        // {
+        //     input: `compute(x: Int): Int {
+        //         let y: Int <- x + 1, 
+        //             z: Int <- x * 2 in {
+        //             y + z;
+        //             y * z;
+        //         };
+        //     };`,
+        //     expectedMethodName:  "compute",
+        //     expectedFormalNames: []string{"x"},
+        //     expectedFormalTypes: []string{"Int"},
+        //     expectedMethodType:  "Int",
+        //     expectedBody:        "{ let y:Int<-(x + 1),z:Int<-(x * 2) in { (y + z); (y * z) } }",
+        // },
+        // {
+        //     input: `process(obj: Object): Object {
+        //         case obj of
+        //             i: Int => i + 1;
+        //             s: String => s.length();
+        //         esac;
+        //     };`,
+        //     expectedMethodName:  "process",
+        //     expectedFormalNames: []string{"obj"},
+        //     expectedFormalTypes: []string{"Object"},
+        //     expectedMethodType:  "Object",
+        //     expectedBody:        "{ case obj of i:Int=>(i + 1); s:String=>s.length() esac }",
+        // },
+        {
+            input: `countdown(start: Int): Object {
+                while not (start = 0) loop {
+                    out_int(start);
+                    start <- start - 1;
+                } pool;
+            };`,
+            expectedMethodName:  "countdown",
+            expectedFormalNames: []string{"start"},
+            expectedFormalTypes: []string{"Int"},
+            expectedMethodType:  "Object",
+            expectedBody:        "{ while (not (start = 0)) loop { out_int(start); start <- (start - 1) } pool }",
+        },
+        {
+            input: `complexMethod(x: Int, y: String): Object {
+                {
+                    let temp: Int <- 0 in {
+                        if x < 10 then {
+                            temp <- temp + 1;
+                            y.concat("small");
+                        } else {
+                            temp <- temp + 2;
+                            y.concat("big");
+                        } fi;
+                    };
+                    isvoid temp;
+                };
+            };`,
+            expectedMethodName:  "complexMethod",
+            expectedFormalNames: []string{"x", "y"},
+            expectedFormalTypes: []string{"Int", "String"},
+            expectedMethodType:  "Object",
+            expectedBody:        "{ { let temp:Int<-0 in { if (x < 10) then { temp <- (temp + 1); y.concat(\"small\") } else { temp <- (temp + 2); y.concat(\"big\") } fi }; isvoid temp } }",
+        },
+    }
+
+    for i, tt := range tests {
+        parser := newParserFromInput(tt.input)
+        method := parser.parseMethod()
+        checkParserErrors(t, parser, i)
+
+        if method.Name.Value != tt.expectedMethodName {
+            t.Fatalf("[%q]: Expected method name to be %q found %q", 
+                tt.input, tt.expectedMethodName, method.Name.Value)
+        }
+
+        for i, formal := range method.Formals {
+            if formal.Name.Value != tt.expectedFormalNames[i] {
+                t.Fatalf("[%q]: Expected formal name to be %q found %q", 
+                    tt.input, tt.expectedFormalNames[i], formal.Name.Value)
+            }
+            if formal.TypeDecl.Value != tt.expectedFormalTypes[i] {
+                t.Fatalf("[%q]: Expected formal type to be %q found %q", 
+                    tt.input, tt.expectedFormalTypes[i], formal.TypeDecl.Value)
+            }
+        }
+
+        if method.TypeDecl.Value != tt.expectedMethodType {
+            t.Fatalf("[%q]: Expected method type to be %q found %q", 
+                tt.input, tt.expectedMethodType, method.TypeDecl.Value)
+        }
+
+        actualBody := SerializeExpression(method.Body)
+        if actualBody != tt.expectedBody {
+            t.Fatalf("[%q]: Expected method body to be %q found %q", 
+                tt.input, tt.expectedBody, actualBody)
+        }
+    }
+}
+
+
+
+
 func TestMethodParsing(t *testing.T) {
 	tests := []struct {
 		input               string

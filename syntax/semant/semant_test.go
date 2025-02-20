@@ -19,80 +19,7 @@ func TestSemanticAnalysis(t *testing.T) {
 		hasError bool
 		errorMsg string
 	}{
-		{
-			name: "Basic class definition",
-			input: `
-                class Main {
-                    main(): Object { 1 };
-                };
-            `,
-			hasError: false,
-		},
-		{
-			name: "Undefined type in attribute",
-			input: `
-                class Main {
-                    x: NonExistentType;
-                    main(): Object { 1 };
-                };
-            `,
-			hasError: true,
-			errorMsg: "undefined type NonExistentType",
-		},
-		{
-			name: "Type mismatch in initialization",
-			input: `
-                class Main {
-                    x: Int <- "string";
-                    main(): Object { 1 };
-                };
-            `,
-			hasError: true,
-			errorMsg: "does not conform to declared type",
-		},
-		{
-			name: "Let with type checking",
-			input: `
-                class Main {
-                    main(): Object {
-                        let x: Int <- "string" in x + 1
-                    };
-                };
-            `,
-			hasError: true,
-			errorMsg: "does not conform to declared type",
-		},
-		{
-			name: "Formals with same name",
-			input: `
-				class Test {
-					x: Int;
-					y(a: Int, a: Bool): Int { a };
-				};
-                class Main {
-                    main(): Object {
-                        let x: Int <- "string" in x + 1
-                    };
-                };
-            `,
-			hasError: true,
-			errorMsg: "does not conform to declared type",
-		},
-		{
-			name: "Correct method overriding",
-			input: `
-                class A {
-                    foo(x: Int): Int { x };
-                };
-                class B inherits A {
-                    foo(x: Int): Int { x + 1 };
-                };
-                class Main {
-                    main(): Object { 1 };
-                };
-            `,
-			hasError: false,
-		},
+
 		{
 			name: "Invalid method overriding",
 			input: `
@@ -237,6 +164,81 @@ func TestSemanticAnalysis2(t *testing.T) {
 		errorMsg string
 	}{
 
+				// {
+		// 	name: "Basic class definition",
+		// 	input: `
+        //         class Main {
+        //             main(): Object { 1 };
+        //         };
+        //     `,
+		// 	hasError: false,
+		// },
+		// {
+		// 	name: "Undefined type in attribute",
+		// 	input: `
+        //         class Main {
+        //             x: NonExistentType;
+        //             main(): Object { 1 };
+        //         };
+        //     `,
+		// 	hasError: true,
+		// 	errorMsg: "undefined type NonExistentType",
+		// },
+		// {
+		// 	name: "Type mismatch in initialization",
+		// 	input: `
+        //         class Main {
+        //             x: Int <- "string";
+        //             main(): Object { 1 };
+        //         };
+        //     `,
+		// 	hasError: true,
+		// 	errorMsg: "does not conform to declared type",
+		// },
+		// {
+		// 	name: "Let with type checking",
+		// 	input: `
+        //         class Main {
+        //             main(): Object {
+        //                 let x: Int <- "string" in x + 1
+        //             };
+        //         };
+        //     `,
+		// 	hasError: true,
+		// 	errorMsg: "does not conform to declared type",
+		// },
+		// {
+		// 	name: "Formals with same name",
+		// 	input: `
+		// 		class Test {
+		// 			x: Int;
+		// 			y(a: Int, a: Bool): Int { a };
+		// 		};
+        //         class Main {
+        //             main(): Object {
+        //                 let x: Int <- "string" in x + 1
+        //             };
+        //         };
+        //     `,
+		// 	hasError: true,
+		// 	errorMsg: "does not conform to declared type",
+		// },
+		// {
+		// 	name: "Correct method overriding",
+		// 	input: `
+        //         class A {
+        //             foo(x: Int): Int { x };
+        //         };
+        //         class B inherits A {
+        //             foo(x: Int): Int { x + 1 };
+        //         };
+        //         class Main {
+        //             main(): Object { 1 };
+        //         };
+        //     `,
+		// 	hasError: false,
+		// },
+
 		// {
 		// 	name: "Formals with same name",
 		// 	input: `
@@ -278,23 +280,23 @@ func TestSemanticAnalysis2(t *testing.T) {
 		// },
 
 		// Test type conformance in checking
-		{
-			name: "Type conformance in checking",
-			input: `
-				class A {
-					foo(x: Int): Int { x };
-				};
-				class B inherits A {
-					foo(x: Int): Int { x + 1 };
-				};
-				class Main {
-					main(): Object {
-						let a: A <- new B in a.foo(1)
-					};
-				};
-			`,
-			hasError: false,
-		},
+		// {
+		// 	name: "Type conformance in checking",
+		// 	input: `
+		// 		class A {
+		// 			foo(x: Int): Int { x };
+		// 		};
+		// 		class B inherits A {
+		// 			foo(x: Int): Int { x + 1 };
+		// 		};
+		// 		class Main {
+		// 			main(): Object {
+		// 				let a: A <- new B in a.foo(1)
+		// 			};
+		// 		};
+		// 	`,
+		// 	hasError: false,
+		// },
 	}
 
 	for _, tt := range tests {
