@@ -96,6 +96,23 @@ func NewSemanticAnalyser() *SemanticAnalyser {
 	}
 }
 
+// helper function to get all ancestors of a type including itself
+func (sa *SemanticAnalyser) getTypeAncestors(typeName string) []string {
+	ancestors := []string{}
+	current := typeName
+
+	for current != "" {
+		ancestors = append(ancestors, current)
+		if node, exists := sa.inheritanceGraph.classes[current]; exists {
+			current = node.parent
+		} else {
+			break
+		}
+	}
+
+	return ancestors
+}
+
 // buildd the inheritance graph
 func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 	// Add basic classes (Object)
@@ -222,6 +239,16 @@ func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
 	if type1 == type2 {
 		return true
 	}
+
+	// Invalid types should not conform
+	if _, exists := sa.inheritanceGraph.classes[type1]; !exists {
+		return false
+	}
+	if _, exists := sa.inheritanceGraph.classes[type2]; !exists {
+		return false
+	}
+
+	// Handle SELF_TYPE special cases
 	if type1 == "SELF_TYPE" {
 		if type2 == "SELF_TYPE" {
 			return true
@@ -254,8 +281,15 @@ func (sa *SemanticAnalyser) Errors() []string {
 }
 
 func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
+
+	fmt.Println("Building inheritance graph...")
 	sa.initInheritanceGraph(program)
+	// print done building inheritance graph
+	fmt.Println("Done building inheritance graph")
 	sa.validateInheritanceGraph()
+
+	// print done building inheritance graph
+	fmt.Println("Done building and analyzing inheritance graph")
 
 	sa.buildClassesSymboltables(program)
 	sa.buildSymboltables(program)
@@ -398,9 +432,6 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 			method.Name.Value, bodyType, method.TypeDecl.Value))
 	}
 }
-
-
-
 
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
 	switch e := expression.(type) {

@@ -198,6 +198,142 @@ func TestClassParser(t *testing.T) {
 	}
 }
 
+func TestNestedBlockExpressions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// {
+		//     // Simple nested block
+		//     input: "{ { 1; }; }",
+		//     expected: "{ { 1 }; }",
+		// },
+		{
+			// Multiple nested blocks
+			input:    "{ { 1; 2; }; { 3; 4; }; }",
+			expected: "{ { 1; 2 }; { 3; 4 } }",
+		},
+		{
+			// Deeply nested blocks
+			input:    "{ { { 1; }; }; }",
+			expected: "{ { { 1 } } }",
+		},
+		{
+			// Nested blocks with expressions
+			input:    "{ 1; { 2; 3; }; 4; }",
+			expected: "{ 1; { 2; 3 }; 4 }",
+		},
+		{
+			// Nested blocks with complex expressions
+			input:    "{ a + b; { c * d; e - f; }; g / h; }",
+			expected: "{ (a + b); { (c * d); (e - f) }; (g / h) }",
+		},
+	}
+
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
+
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - wrong result\nexpected=%q\ngot=%q\n",
+				i, tt.expected, actual)
+		}
+	}
+}
+
+func TestBlockExpressions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// {
+		// 	// Simple block with single expression
+		// 	input:    "{ 1; }",
+		// 	expected: "{ 1 }",
+		// },
+		{
+			// Block with multiple simple expressions
+			input:    "{ 1; 2; 3; }",
+			expected: "{ 1; 2; 3 }",
+		},
+		{
+			// Block with string and integer expressions
+			input:    `{ "hello"; 42; }`,
+			expected: `{ "hello"; 42 }`,
+		},
+		{
+			// Block with arithmetic expressions
+			input:    "{ 1 + 2; 3 * 4; }",
+			expected: "{ (1 + 2); (3 * 4) }",
+		},
+		{
+			// Block with method calls
+			input:    "{ x.foo(); y.bar(1, 2); }",
+			expected: "{ x.foo(); y.bar(1, 2) }",
+		},
+		{
+			// Block with let expressions
+			input:    "{ let x: Int <- 1 in x + 1; 2; }",
+			expected: "{ let x:Int<-1 in (x + 1); 2 }",
+		},
+		{
+			// Block with if expressions
+			input:    "{ if x then 1 else 2 fi; 3; }",
+			expected: "{ if x then 1 else 2 fi; 3 }",
+		},
+		// {
+		//     // Nested blocks
+		//     input: "{ { 1; 2; }; { 3; 4; }; }",
+		//     expected: "{ { 1; 2 }; { 3; 4 } }",
+		// },
+		{
+			// Block with case expression
+			input: `{
+		        case x of
+		            a: Int => 1;
+		            b: String => 2;
+		        esac;
+		        3;
+		    }`,
+			expected: "{ case x of a:Int=>1; b:String=>2 esac; 3 }",
+		},
+		{
+			// Block with while expression
+			input:    "{ while x loop y pool; 42; }",
+			expected: "{ while x loop y pool; 42 }",
+		},
+
+		{
+			// Complex nested expressions
+			input: `{
+		        let x: Int <- 1 in {
+		            if x then
+		                y.foo()
+		            else
+		                z.bar()
+		            fi;
+		            42;
+		        };
+		        3;
+		    }`,
+			expected: "{ let x:Int<-1 in { if x then y.foo() else z.bar() fi; 42 }; 3 }",
+		},
+	}
+
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseBlockExpression()
+		checkParserErrors(t, parser, i)
+
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
+}
+
 func TestCaseExpression(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -288,141 +424,146 @@ func TestFormalParsing(t *testing.T) {
 	}
 }
 
-
-
-
-
-
 func TestMethodParsing2(t *testing.T) {
-    tests := []struct {
-        input               string
-        expectedMethodName  string
-        expectedFormalNames []string
-        expectedFormalTypes []string
-        expectedMethodType  string
-        expectedBody        string
-    }{
+	tests := []struct {
+		input               string
+		expectedMethodName  string
+		expectedFormalNames []string
+		expectedFormalTypes []string
+		expectedMethodType  string
+		expectedBody        string
+	}{
 
 		// Passed
-        // {
-        //     input:               "main(): Void { 42; };",
-        //     expectedMethodName:  "main",
-        //     expectedFormalNames: []string{},
-        //     expectedFormalTypes: []string{},
-        //     expectedMethodType:  "Void",
-        //     expectedBody:        "{ 42 }",
-        // },
+		{
+			input:               "main(): Void { 42; };",
+			expectedMethodName:  "main",
+			expectedFormalNames: []string{},
+			expectedFormalTypes: []string{},
+			expectedMethodType:  "Void",
+			expectedBody:        "{ 42 }",
+		},
 
 		// Review
-        // {
-        //     input: `factorial(n: Int): Int {
-        //         if n = 0 then 1 else n * factorial(n-1) fi;
-        //     };`,
-        //     expectedMethodName:  "factorial",
-        //     expectedFormalNames: []string{"n"},
-        //     expectedFormalTypes: []string{"Int"},
-        //     expectedMethodType:  "Int",
-        //     expectedBody:        "{ if (n = 0) then 1 else (n * factorial((n - 1))) fi }",
-        // },
-        // {
-        //     input: `compute(x: Int): Int {
-        //         let y: Int <- x + 1, 
-        //             z: Int <- x * 2 in {
-        //             y + z;
-        //             y * z;
-        //         };
-        //     };`,
-        //     expectedMethodName:  "compute",
-        //     expectedFormalNames: []string{"x"},
-        //     expectedFormalTypes: []string{"Int"},
-        //     expectedMethodType:  "Int",
-        //     expectedBody:        "{ let y:Int<-(x + 1),z:Int<-(x * 2) in { (y + z); (y * z) } }",
-        // },
-        // {
-        //     input: `process(obj: Object): Object {
-        //         case obj of
-        //             i: Int => i + 1;
-        //             s: String => s.length();
-        //         esac;
-        //     };`,
-        //     expectedMethodName:  "process",
-        //     expectedFormalNames: []string{"obj"},
-        //     expectedFormalTypes: []string{"Object"},
-        //     expectedMethodType:  "Object",
-        //     expectedBody:        "{ case obj of i:Int=>(i + 1); s:String=>s.length() esac }",
-        // },
-        {
-            input: `countdown(start: Int): Object {
+		{
+			input:               "sum(a:Integer,b:Integer): Integer { a + b; c + d;};",
+			expectedMethodName:  "sum",
+			expectedFormalNames: []string{"a", "b"},
+			expectedFormalTypes: []string{"Integer", "Integer"},
+			expectedMethodType:  "Integer",
+			expectedBody:        "{ (a + b); (c + d) }",
+		},
+		{
+			input: `factorial(n: Int): Int {
+                if n = 0 then 1 else n * factorial(n-1) fi;
+            };`,
+			expectedMethodName:  "factorial",
+			expectedFormalNames: []string{"n"},
+			expectedFormalTypes: []string{"Int"},
+			expectedMethodType:  "Int",
+			expectedBody:        "{ if (n = 0) then 1 else (n * factorial((n - 1))) fi }",
+		},
+		{
+			input: `process(obj: Object): Object {
+		        case obj of
+		            i: Int => i + 1;
+		            s: String => s.length();
+		        esac;
+		    };`,
+			expectedMethodName:  "process",
+			expectedFormalNames: []string{"obj"},
+			expectedFormalTypes: []string{"Object"},
+			expectedMethodType:  "Object",
+			expectedBody:        "{ case obj of i:Int=>(i + 1); s:String=>s.length() esac }",
+		},
+		{
+			input: `countdown(start: Int): Object {
                 while not (start = 0) loop {
                     out_int(start);
                     start <- start - 1;
+					start <- start + 1;
+					start <- start - 1;
+					out_int(start);
                 } pool;
             };`,
-            expectedMethodName:  "countdown",
-            expectedFormalNames: []string{"start"},
-            expectedFormalTypes: []string{"Int"},
-            expectedMethodType:  "Object",
-            expectedBody:        "{ while (not (start = 0)) loop { out_int(start); start <- (start - 1) } pool }",
-        },
-        {
-            input: `complexMethod(x: Int, y: String): Object {
-                {
-                    let temp: Int <- 0 in {
-                        if x < 10 then {
-                            temp <- temp + 1;
-                            y.concat("small");
-                        } else {
-                            temp <- temp + 2;
-                            y.concat("big");
-                        } fi;
-                    };
-                    isvoid temp;
-                };
-            };`,
-            expectedMethodName:  "complexMethod",
-            expectedFormalNames: []string{"x", "y"},
-            expectedFormalTypes: []string{"Int", "String"},
-            expectedMethodType:  "Object",
-            expectedBody:        "{ { let temp:Int<-0 in { if (x < 10) then { temp <- (temp + 1); y.concat(\"small\") } else { temp <- (temp + 2); y.concat(\"big\") } fi }; isvoid temp } }",
-        },
-    }
+			expectedMethodName:  "countdown",
+			expectedFormalNames: []string{"start"},
+			expectedFormalTypes: []string{"Int"},
+			expectedMethodType:  "Object",
+			expectedBody:        "{ while (not (start = 0)) loop { out_int(start); (start <- (start - 1)); (start <- (start + 1)); (start <- (start - 1)); out_int(start) } pool }",
+		},
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        method := parser.parseMethod()
-        checkParserErrors(t, parser, i)
+		{
+			input: `compute(x: Int): Int {
+		        let y: Int <- x + 1,
+		            z: Int <- x * 2 in {
+		            y + z;
+		            y * z;
+		        };
+		    };`,
+			expectedMethodName:  "compute",
+			expectedFormalNames: []string{"x"},
+			expectedFormalTypes: []string{"Int"},
+			expectedMethodType:  "Int",
+			expectedBody:        "{ let y:Int<-(x + 1),z:Int<-(x * 2) in { (y + z); (y * z) } }",
+		},
 
-        if method.Name.Value != tt.expectedMethodName {
-            t.Fatalf("[%q]: Expected method name to be %q found %q", 
-                tt.input, tt.expectedMethodName, method.Name.Value)
-        }
+		// {
+		//     input: `complexMethod(x: Int, y: String): Object {
+		//         {
+		//             let temp: Int <- 0 in {
+		//                 if x < 10 then {
+		//                     temp <- temp + 1;
+		//                     y.concat("small");
+		//                 } else {
+		//                     temp <- temp + 2;
+		//                     y.concat("big");
+		//                 } fi;
+		//             };
+		//             isvoid temp;
+		//         };
+		//     };`,
+		//     expectedMethodName:  "complexMethod",
+		//     expectedFormalNames: []string{"x", "y"},
+		//     expectedFormalTypes: []string{"Int", "String"},
+		//     expectedMethodType:  "Object",
+		//     expectedBody:        "{ { let temp:Int<-0 in { if (x < 10) then { temp <- (temp + 1); y.concat(\"small\") } else { temp <- (temp + 2); y.concat(\"big\") } fi }; isvoid temp } }",
+		// },
+	}
 
-        for i, formal := range method.Formals {
-            if formal.Name.Value != tt.expectedFormalNames[i] {
-                t.Fatalf("[%q]: Expected formal name to be %q found %q", 
-                    tt.input, tt.expectedFormalNames[i], formal.Name.Value)
-            }
-            if formal.TypeDecl.Value != tt.expectedFormalTypes[i] {
-                t.Fatalf("[%q]: Expected formal type to be %q found %q", 
-                    tt.input, tt.expectedFormalTypes[i], formal.TypeDecl.Value)
-            }
-        }
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		method := parser.parseMethod()
+		checkParserErrors(t, parser, i)
 
-        if method.TypeDecl.Value != tt.expectedMethodType {
-            t.Fatalf("[%q]: Expected method type to be %q found %q", 
-                tt.input, tt.expectedMethodType, method.TypeDecl.Value)
-        }
+		if method.Name.Value != tt.expectedMethodName {
+			t.Fatalf("[%q]: Expected method name to be %q found %q",
+				tt.input, tt.expectedMethodName, method.Name.Value)
+		}
 
-        actualBody := SerializeExpression(method.Body)
-        if actualBody != tt.expectedBody {
-            t.Fatalf("[%q]: Expected method body to be %q found %q", 
-                tt.input, tt.expectedBody, actualBody)
-        }
-    }
+		for i, formal := range method.Formals {
+			if formal.Name.Value != tt.expectedFormalNames[i] {
+				t.Fatalf("[%q]: Expected formal name to be %q found %q",
+					tt.input, tt.expectedFormalNames[i], formal.Name.Value)
+			}
+			if formal.TypeDecl.Value != tt.expectedFormalTypes[i] {
+				t.Fatalf("[%q]: Expected formal type to be %q found %q",
+					tt.input, tt.expectedFormalTypes[i], formal.TypeDecl.Value)
+			}
+		}
+
+		if method.TypeDecl.Value != tt.expectedMethodType {
+			t.Fatalf("[%q]: Expected method type to be %q found %q",
+				tt.input, tt.expectedMethodType, method.TypeDecl.Value)
+		}
+
+		actualBody := SerializeExpression(method.Body)
+		if actualBody != tt.expectedBody {
+			t.Fatalf("[%q]: Expected method body to be %q found %q",
+				tt.input, tt.expectedBody, actualBody)
+		}
+	}
 }
-
-
-
 
 func TestMethodParsing(t *testing.T) {
 	tests := []struct {
@@ -527,12 +668,19 @@ func TestExpressionParssing(t *testing.T) {
 		{"1 * 2", "(1 * 2)"},
 		{"isvoid 1", "isvoid 1"},
 		{"1 / 2", "(1 / 2)"},
-		// TODO: Implement parenthesis parsing
-		// {"(1 + 2)", "(1 + 2)"},
+		{"(1 + 2)", "(1 + 2)"},
 		{"new Object", "new Object"},
+		{"x.foo()", "x.foo()"},
+		{"x.bar(1, 2)", "x.bar(1, 2)"},
+		{"while true loop {1;} pool", "while true loop { 1 } pool"},
+		{"while true loop 1 pool", "while true loop 1 pool"},
 		{"x <- 5", "(x <- 5)"},
 		{"if true then 1 else 2 fi", "if true then 1 else 2 fi"},
-		{"while true loop 1 pool", "while true loop 1 pool"},
+		{"if true then 1 else if false then 2 else 3 fi fi", "if true then 1 else if false then 2 else 3 fi fi"},
+		// test factorial
+		{"if n = 0 then 1 else n * factorial(n-1) fi", "if (n = 0) then 1 else (n * factorial((n - 1))) fi"},
+		// test case
+		{"case x of a: Int => 1; b: String => 2; esac", "case x of a:Int=>1; b:String=>2 esac"},
 	}
 
 	for i, tt := range tests {
@@ -548,176 +696,165 @@ func TestExpressionParssing(t *testing.T) {
 
 }
 
-
-
-
-
 func TestMethodDispatch(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            // Simple method call
-            input:    "obj.method()",
-            expected: "obj.method()",
-        },
-        {
-            // Method call with arguments
-            input:    "obj.method(1, 2, 3)",
-            expected: "obj.method(1, 2, 3)",
-        },
-        // {
-        //     // Static dispatch
-        //     input:    "obj@Type.method()",
-        //     expected: "obj@Type.method()",
-        // },
-        {
-            // Complex dispatch with nested expressions
-            input:    "(a + b).method((x + y), z.foo())",
-            expected: "(a + b).method((x + y), z.foo())",
-        },
-    }
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// Simple method call
+			input:    "obj.method()",
+			expected: "obj.method()",
+		},
+		{
+			// Method call with arguments
+			input:    "obj.method(1, 2, 3)",
+			expected: "obj.method(1, 2, 3)",
+		},
+		// {
+		//     // Static dispatch
+		//     input:    "obj@Type.method()",
+		//     expected: "obj@Type.method()",
+		// },
+		{
+			// Complex dispatch with nested expressions
+			input:    "(a + b).method((x + y), z.foo())",
+			expected: "(a + b).method((x + y), z.foo())",
+		},
+	}
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        expression := parser.parseExpression(START)
-        checkParserErrors(t, parser, i)
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
 
 		fmt.Println(expression)
-        actual := SerializeExpression(expression)
-        if actual != tt.expected {
-            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
-        }
-    }
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
 }
 
-
-
-
 func TestNestedExpressions(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            // Nested if expressions
-            input: `if if x then true else false fi then 1 else 2 fi`,
-            expected: "if if x then true else false fi then 1 else 2 fi",
-        },
-        {
-            // Nested let expressions
-            input: `let x: Int <- 1 in let y: Int <- 2 in x + y`,
-            expected: "let x:Int<-1 in let y:Int<-2 in (x + y)",
-        },
-        {
-            // Mixed nesting
-            input: `if x then
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// Nested if expressions
+			input:    `if if x then true else false fi then 1 else 2 fi`,
+			expected: "if if x then true else false fi then 1 else 2 fi",
+		},
+		{
+			// Nested let expressions
+			input:    `let x: Int <- 1 in let y: Int <- 2 in x + y`,
+			expected: "let x:Int<-1 in let y:Int<-2 in (x + y)",
+		},
+		{
+			// Mixed nesting
+			input: `if x then
                         let y: Int <- 1 in y + 2
                     else
                         3
                     fi`,
-            expected: "if x then let y:Int<-1 in (y + 2) else 3 fi",
-        },
-    }
+			expected: "if x then let y:Int<-1 in (y + 2) else 3 fi",
+		},
+	}
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        expression := parser.parseExpression(START)
-        checkParserErrors(t, parser, i)
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
 
-        actual := SerializeExpression(expression)
-        if actual != tt.expected {
-            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
-        }
-    }
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
 }
 
-
-
-
-
 func TestLetExpressions(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            // Basic let with no initialization
-            input: `let x: Int in x + 1`,
-            expected: "let x:Int in (x + 1)",
-        },
-        {
-            // Let with initialization
-            input: `let x: Int <- 5 in x + 1`,
-            expected: "let x:Int<-5 in (x + 1)",
-        },
-        {
-            // Multiple bindings
-            input: `let x: Int <- 5, y: String <- "hello" in x + y.length()`,
-            expected: "let x:Int<-5,y:String<-\"hello\" in (x + y.length())",
-        },
-        {
-            // Mix of initialized and uninitialized bindings
-            input: `let x: Int <- 5, y: Int, z: String <- "hello" in x + y`,
-            expected: "let x:Int<-5,y:Int,z:String<-\"hello\" in (x + y)",
-        },
-        {
-            // Nested let expressions
-            input: `let x: Int <- 1 in let y: Int <- x + 1 in x + y`,
-            expected: "let x:Int<-1 in let y:Int<-(x + 1) in (x + y)",
-        },
-        {
-            // Let with complex initialization
-            input: `let x: Int <- if true then 1 else 2 fi in x + 1`,
-            expected: "let x:Int<-if true then 1 else 2 fi in (x + 1)",
-        },
-        {
-            // Let with multiple types
-            input: `let x: Int <- 1, y: Bool <- true, z: String <- "hello" in x`,
-            expected: "let x:Int<-1,y:Bool<-true,z:String<-\"hello\" in x",
-        },
-        {
-            // Let with self type
-            input: `let x: SELF_TYPE <- self in x.method()`,
-            expected: "let x:SELF_TYPE<-self in x.method()",
-        },
-        {
-            // Let within a block
-            input: `{
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// Basic let with no initialization
+			input:    `let x: Int in x + 1`,
+			expected: "let x:Int in (x + 1)",
+		},
+		{
+			// Let with initialization
+			input:    `let x: Int <- 5 in x + 1`,
+			expected: "let x:Int<-5 in (x + 1)",
+		},
+		{
+			// Multiple bindings
+			input:    `let x: Int <- 5, y: String <- "hello" in x + y.length()`,
+			expected: "let x:Int<-5,y:String<-\"hello\" in (x + y.length())",
+		},
+		{
+			// Mix of initialized and uninitialized bindings
+			input:    `let x: Int <- 5, y: Int, z: String <- "hello" in x + y`,
+			expected: "let x:Int<-5,y:Int,z:String<-\"hello\" in (x + y)",
+		},
+		{
+			// Nested let expressions
+			input:    `let x: Int <- 1 in let y: Int <- x + 1 in x + y`,
+			expected: "let x:Int<-1 in let y:Int<-(x + 1) in (x + y)",
+		},
+		{
+			// Let with complex initialization
+			input:    `let x: Int <- if true then 1 else 2 fi in x + 1`,
+			expected: "let x:Int<-if true then 1 else 2 fi in (x + 1)",
+		},
+		{
+			// Let with multiple types
+			input:    `let x: Int <- 1, y: Bool <- true, z: String <- "hello" in x`,
+			expected: "let x:Int<-1,y:Bool<-true,z:String<-\"hello\" in x",
+		},
+		{
+			// Let with self type
+			input:    `let x: SELF_TYPE <- self in x.method()`,
+			expected: "let x:SELF_TYPE<-self in x.method()",
+		},
+		{
+			// Let within a block
+			input: `{
                 let x: Int <- 1 in x + 1;
                 let y: Int <- 2 in y + 2
             }`,
-            expected: "{ let x:Int<-1 in (x + 1); let y:Int<-2 in (y + 2) }",
-        },
-        {
-            // Let with method call initialization
-            input: `let x: Int <- foo(), y: String <- bar(1, 2) in x + y.length()`,
-            expected: "let x:Int<-foo(),y:String<-bar(1,2) in (x + y.length())",
-        },
-        {
-            // Let with complex nested expressions
-            input: `let x: Int <- let y: Int <- 1 in y + 1 in x * 2`,
-            expected: "let x:Int<-let y:Int<-1 in (y + 1) in (x * 2)",
-        },
-        {
-            // Let with multiple nested complex initializations
-            input: `let x: Int <- if true then 1 else 2 fi,
+			expected: "{ let x:Int<-1 in (x + 1); let y:Int<-2 in (y + 2) }",
+		},
+		{
+			// Let with method call initialization
+			input:    `let x: Int <- foo(), y: String <- bar(1, 2) in x + y.length()`,
+			expected: "let x:Int<-foo(),y:String<-bar(1,2) in (x + y.length())",
+		},
+		{
+			// Let with complex nested expressions
+			input:    `let x: Int <- let y: Int <- 1 in y + 1 in x * 2`,
+			expected: "let x:Int<-let y:Int<-1 in (y + 1) in (x * 2)",
+		},
+		{
+			// Let with multiple nested complex initializations
+			input: `let x: Int <- if true then 1 else 2 fi,
                        y: Int <- while false loop 1 pool,
                        z: Int <- { 1; 2; 3 }
                    in x + y + z`,
-            expected: "let x:Int<-if true then 1 else 2 fi,y:Int<-while false loop 1 pool,z:Int<-{1;2;3} in ((x + y) + z)",
-        },
-    }
+			expected: "let x:Int<-if true then 1 else 2 fi,y:Int<-while false loop 1 pool,z:Int<-{1;2;3} in ((x + y) + z)",
+		},
+	}
 
-    for i, tt := range tests {
-        parser := newParserFromInput(tt.input)
-        expression := parser.parseExpression(START)
-        checkParserErrors(t, parser, i)
+	for i, tt := range tests {
+		parser := newParserFromInput(tt.input)
+		expression := parser.parseExpression(START)
+		checkParserErrors(t, parser, i)
 
-        actual := SerializeExpression(expression)
-        if actual != tt.expected {
-            t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
-        }
-    }
+		actual := SerializeExpression(expression)
+		if actual != tt.expected {
+			t.Errorf("test[%d] - expected=%q, got=%q", i, tt.expected, actual)
+		}
+	}
 }

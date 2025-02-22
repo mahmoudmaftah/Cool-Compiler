@@ -36,17 +36,15 @@ func SerializeExpression(exp ast.Expression) string {
 			SerializeExpression(node.Consequence),
 			SerializeExpression(node.Alternative))
 
-	case *ast.WhileExpression:
-		return fmt.Sprintf("while %s loop %s pool",
-			SerializeExpression(node.Condition),
-			SerializeExpression(node.Body))
-
 	case *ast.BlockExpression:
 		exprs := make([]string, len(node.Expressions))
 		for i, expr := range node.Expressions {
 			exprs[i] = SerializeExpression(expr)
 		}
-		return fmt.Sprintf("{ %s }", strings.Join(exprs, "; "))
+		if len(exprs) > 0 {
+			return fmt.Sprintf("{ %s }", strings.Join(exprs, "; "))
+		}
+		return "{ }"
 
 	case *ast.LetExpression:
 		bindings := make([]string, len(node.Bindings))
@@ -111,6 +109,9 @@ func SerializeExpression(exp ast.Expression) string {
 			SerializeExpression(node.Object),
 			node.Method.Value,
 			strings.Join(args, ", "))
+
+	case *ast.WhileExpression:
+		return fmt.Sprintf("while %s loop %s pool", SerializeExpression(node.Condition), SerializeExpression(node.Body))
 
 	default:
 		return fmt.Sprintf("unknown expression: %T", exp)

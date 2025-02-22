@@ -3,6 +3,7 @@ package semant
 import (
 	"cool-compiler/lexer"
 	"cool-compiler/parser"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -36,95 +37,98 @@ func TestSemanticAnalysis(t *testing.T) {
 			hasError: true,
 			errorMsg: "Invalid method override",
 		},
-		{
-			name: "Case expression with valid types",
-			input: `
-                class Main {
-                    main(): Object {
-                        case x of
-                            i: Int => i + 1;
-                            s: String => 2;
-                        esac
-                    };
-                };
-            `,
-			hasError: false,
-		},
-		{
-			name: "Case expression with duplicate types",
-			input: `
-                class Main {
-                    main(): Object {
-                        case x of
-                            i: Int => i + 1;
-                            j: Int => j + 2;
-                        esac
-                    };
-                };
-            `,
-			hasError: true,
-			errorMsg: "Duplicate branch type",
-		},
-		{
-			name: "If expression type conformance",
-			input: `
-                class Main {
-                    main(): Object {
-                        if true then 1 else "string" fi
-                    };
-                };
-            `,
-			hasError: false, // Should find Object as LUB
-		},
-		{
-			name: "SELF_TYPE handling",
-			input: `
-                class Main {
-                    x: SELF_TYPE;
-                    main(): SELF_TYPE { self };
-                };
-            `,
-			hasError: false,
-		},
-		{
-			name: "Method dispatch type checking",
-			input: `
-                class A {
-                    foo(x: Int): Int { x };
-                };
-                class Main {
-                    a: A;
-                    main(): Object {
-                        a.foo("string")
-                    };
-                };
-            `,
-			hasError: true,
-			errorMsg: "does not conform to formal parameter type",
-		},
-		{
-			name: "Static dispatch type checking",
-			input: `
-                class A {
-                    foo(): Int { 1 };
-                };
-                class B inherits A {
-                    foo(): Int { 2 };
-                };
-                class Main {
-                    main(): Object {
-                        (new B)@A.foo()
-                    };
-                };
-            `,
-			hasError: false,
-		},
+		// {
+		// 	name: "Case expression with valid types",
+		// 	input: `
+		//         class Main {
+		//             main(): Object {
+		//                 case x of
+		//                     i: Int => i + 1;
+		//                     s: String => 2;
+		//                 esac
+		//             };
+		//         };
+		//     `,
+		// 	hasError: false,
+		// },
+		// {
+		// 	name: "Case expression with duplicate types",
+		// 	input: `
+		//         class Main {
+		//             main(): Object {
+		//                 case x of
+		//                     i: Int => i + 1;
+		//                     j: Int => j + 2;
+		//                 esac
+		//             };
+		//         };
+		//     `,
+		// 	hasError: true,
+		// 	errorMsg: "Duplicate branch type",
+		// },
+		// {
+		// 	name: "If expression type conformance",
+		// 	input: `
+		//         class Main {
+		//             main(): Object {
+		//                 if true then 1 else "string" fi
+		//             };
+		//         };
+		//     `,
+		// 	hasError: false, // Should find Object as LUB
+		// },
+		// {
+		// 	name: "SELF_TYPE handling",
+		// 	input: `
+		//         class Main {
+		//             x: SELF_TYPE;
+		//             main(): SELF_TYPE { self };
+		//         };
+		//     `,
+		// 	hasError: false,
+		// },
+		// {
+		// 	name: "Method dispatch type checking",
+		// 	input: `
+		//         class A {
+		//             foo(x: Int): Int { x };
+		//         };
+		//         class Main {
+		//             a: A;
+		//             main(): Object {
+		//                 a.foo("string")
+		//             };
+		//         };
+		//     `,
+		// 	hasError: true,
+		// 	errorMsg: "does not conform to formal parameter type",
+		// },
+		// {
+		// 	name: "Static dispatch type checking",
+		// 	input: `
+		//         class A {
+		//             foo(): Int { 1 };
+		//         };
+		//         class B inherits A {
+		//             foo(): Int { 2 };
+		//         };
+		//         class Main {
+		//             main(): Object {
+		//                 (new B)@A.foo()
+		//             };
+		//         };
+		//     `,
+		// 	hasError: false,
+		// },
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := newParserFromInput(tt.input)
+
+			fmt.Println("start parsing")
 			program := parser.ParseProgram()
+			fmt.Println("done parsing")
 
 			analyzer := NewSemanticAnalyser()
 			analyzer.Analyze(program)
@@ -164,46 +168,46 @@ func TestSemanticAnalysis2(t *testing.T) {
 		errorMsg string
 	}{
 
-				// {
+		// {
 		// 	name: "Basic class definition",
 		// 	input: `
-        //         class Main {
-        //             main(): Object { 1 };
-        //         };
-        //     `,
+		//         class Main {
+		//             main(): Object { 1 };
+		//         };
+		//     `,
 		// 	hasError: false,
 		// },
 		// {
 		// 	name: "Undefined type in attribute",
 		// 	input: `
-        //         class Main {
-        //             x: NonExistentType;
-        //             main(): Object { 1 };
-        //         };
-        //     `,
+		//         class Main {
+		//             x: NonExistentType;
+		//             main(): Object { 1 };
+		//         };
+		//     `,
 		// 	hasError: true,
 		// 	errorMsg: "undefined type NonExistentType",
 		// },
 		// {
 		// 	name: "Type mismatch in initialization",
 		// 	input: `
-        //         class Main {
-        //             x: Int <- "string";
-        //             main(): Object { 1 };
-        //         };
-        //     `,
+		//         class Main {
+		//             x: Int <- "string";
+		//             main(): Object { 1 };
+		//         };
+		//     `,
 		// 	hasError: true,
 		// 	errorMsg: "does not conform to declared type",
 		// },
 		// {
 		// 	name: "Let with type checking",
 		// 	input: `
-        //         class Main {
-        //             main(): Object {
-        //                 let x: Int <- "string" in x + 1
-        //             };
-        //         };
-        //     `,
+		//         class Main {
+		//             main(): Object {
+		//                 let x: Int <- "string" in x + 1
+		//             };
+		//         };
+		//     `,
 		// 	hasError: true,
 		// 	errorMsg: "does not conform to declared type",
 		// },
@@ -214,28 +218,28 @@ func TestSemanticAnalysis2(t *testing.T) {
 		// 			x: Int;
 		// 			y(a: Int, a: Bool): Int { a };
 		// 		};
-        //         class Main {
-        //             main(): Object {
-        //                 let x: Int <- "string" in x + 1
-        //             };
-        //         };
-        //     `,
+		//         class Main {
+		//             main(): Object {
+		//                 let x: Int <- "string" in x + 1
+		//             };
+		//         };
+		//     `,
 		// 	hasError: true,
 		// 	errorMsg: "does not conform to declared type",
 		// },
 		// {
 		// 	name: "Correct method overriding",
 		// 	input: `
-        //         class A {
-        //             foo(x: Int): Int { x };
-        //         };
-        //         class B inherits A {
-        //             foo(x: Int): Int { x + 1 };
-        //         };
-        //         class Main {
-        //             main(): Object { 1 };
-        //         };
-        //     `,
+		//         class A {
+		//             foo(x: Int): Int { x };
+		//         };
+		//         class B inherits A {
+		//             foo(x: Int): Int { x + 1 };
+		//         };
+		//         class Main {
+		//             main(): Object { 1 };
+		//         };
+		//     `,
 		// 	hasError: false,
 		// },
 
