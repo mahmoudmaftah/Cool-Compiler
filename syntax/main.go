@@ -3,6 +3,7 @@ package main
 import (
 	"cool-compiler/lexer"
 	"cool-compiler/parser"
+	"cool-compiler/semant"
 	"flag"
 	"fmt"
 	"os"
@@ -27,7 +28,7 @@ func main() {
 
 	l := lexer.NewLexer(strings.NewReader(string(code)))
 	p := parser.New(l)
-	_ = p.ParseProgram()
+	program := p.ParseProgram()
 
 	if len(p.Errors()) > 0 {
 		fmt.Println("Parsing Errors:")
@@ -36,6 +37,18 @@ func main() {
 		}
 		os.Exit(1)
 	}
+
+	analyzer := semant.NewSemanticAnalyser()
+	analyzer.Analyze(program)
+
+	if len(analyzer.Errors()) > 0 {
+		fmt.Println("Semantic Errors:")
+		for _, msg := range analyzer.Errors() {
+			fmt.Println(msg)
+		}
+		os.Exit(1)
+	}
+	
 
 	fmt.Println("Done compiling!")
 }

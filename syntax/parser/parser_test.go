@@ -30,6 +30,20 @@ func TestProgramParser(t *testing.T) {
 		expectedClasses []string
 	}{
 		{
+			input: `
+                class A {
+                    foo(x: Int): Int { x };
+                };
+                class B inherits A {
+                    foo(x: String): Int { 1 };
+                };
+                class Main {
+                    main(): Object { 1 };
+                };
+            `,
+			expectedClasses: []string{"A", "B", "Main"},
+		},
+		{
 			// Test case 1: Single empty class
 			input:           "class Main {};",
 			expectedClasses: []string{"Main"},
@@ -435,6 +449,7 @@ func TestMethodParsing2(t *testing.T) {
 	}{
 
 		// Passed
+
 		{
 			input:               "main(): Void { 42; };",
 			expectedMethodName:  "main",

@@ -180,6 +180,9 @@ func (p *Parser) ParseProgram() *ast.Program {
 	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
 
 		c := p.ParseClass()
+		if c == nil {
+			continue
+		}
 
 		if p.curToken.Type != lexer.SEMI {
 			p.errors = append(p.errors,
@@ -188,7 +191,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 		} else {
 			p.nextToken()
 		}
-		fmt.Println(c.Name.Value)
+		// fmt.Println(c.Name.Value)
 
 		prog.Classes = append(prog.Classes, c)
 	}
@@ -199,6 +202,7 @@ func (p *Parser) ParseClass() *ast.Class {
 	c := &ast.Class{Token: p.curToken}
 
 	if !p.expectCurrent(lexer.CLASS) {
+		p.nextToken()
 		return nil
 	}
 
@@ -221,7 +225,7 @@ func (p *Parser) ParseClass() *ast.Class {
 		}
 		c.Parent = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 		p.nextToken()
-	}
+	} 
 
 	if !p.curTokenIs(lexer.LBRACE) {
 		p.errors = append(p.errors,
@@ -231,34 +235,21 @@ func (p *Parser) ParseClass() *ast.Class {
 	}
 	p.nextToken()
 
-
-	i := 0
 	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
 		feature := p.parseFeature()
-		fmt.Println("FEATURE", p.curToken.Literal)
-		fmt.Println("FEATURE", p.peekToken.Literal)
-
-		i ++
-		if i > 10 {
-			break
-		}
-		
-
 
 		if feature != nil {
 			c.Features = append(c.Features, feature)
-			
-			// check if the current token is a RBRACE 
+			// check if the current token is a RBRACE
 			// otherwise parse the next feature
-			
 			if p.curTokenIs(lexer.RBRACE) {
 				break
 			}
-			
+
 		}
 	}
 
-	fmt.Println("===================", p.curToken.Literal)
+	// fmt.Println("===================", p.curToken.Literal)
 	if !p.curTokenIs(lexer.RBRACE) {
 		p.errors = append(p.errors,
 			fmt.Sprintf("Expected } at end of class at line %d col %d, got %s",
@@ -302,7 +293,7 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 		attr.Init = p.parseExpression(LOWEST)
 	}
 
-	fmt.Println("AT ATTRIBUTE PARSER", p.curToken.Literal)
+	// fmt.Println("AT ATTRIBUTE PARSER", p.curToken.Literal)
 
 	p.nextToken()
 	// check if the current token is a SEMI
@@ -311,7 +302,7 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 			"Expected ';' at line %d col %d, got %s",
 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
 		return nil
-	}else{
+	} else {
 		p.nextToken()
 	}
 
@@ -321,7 +312,6 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 // TODO : PARSE METHOD (Will have a set of formals and a body).
 
 func (p *Parser) parseMethod() *ast.Method {
-	fmt.Println("PARSING METHOD")
 	method := &ast.Method{Token: p.curToken}
 
 	// Parse method name (current token should be OBJECTID)
@@ -377,25 +367,23 @@ func (p *Parser) parseMethod() *ast.Method {
 		return nil
 	}
 
-	fmt.Println("AT METHOD PARSER", p.curToken.Literal)
+	// fmt.Println("AT METHOD PARSER", p.curToken.Literal)
 
 	// Parse method body as a block expression
 	method.Body = p.parseBlockExpression()
 
-
-	fmt.Println("MAHMOUD", p.curToken.Literal)
-	fmt.Println("MAHMOUD", p.peekToken.Literal)
+	// fmt.Println("MAHMOUD", p.curToken.Literal)
+	// fmt.Println("MAHMOUD", p.peekToken.Literal)
 	// read the rbrace
 	if !p.curTokenIs(lexer.RBRACE) {
 		p.errors = append(p.errors, fmt.Sprintf(
 			"Expected '}' at line %d col %d, got %s",
 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
 		return nil
-	}else{
+	} else {
 		p.nextToken()
 	}
 
-	
 	// at this point, we should be at the end of the method
 	// so we expect a ';' token
 	if !p.curTokenIs(lexer.SEMI) {
@@ -403,10 +391,9 @@ func (p *Parser) parseMethod() *ast.Method {
 			"Expected ';' at line %d col %d, got %s",
 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
 		return nil
-	}else{
+	} else {
 		p.nextToken()
 	}
-
 
 	return method
 }
@@ -557,7 +544,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 }
 
 func (p *Parser) parseWhileExpression() ast.Expression {
-	fmt.Println("PARSING WHILE")
+	// fmt.Println("PARSING WHILE")
 	expression := &ast.WhileExpression{Token: p.curToken}
 
 	p.nextToken()
@@ -584,9 +571,6 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 		p.nextToken()
 	}
 
-
-
-
 	if !p.curTokenIs(lexer.POOL) {
 		p.errors = append(p.errors, fmt.Sprintf(
 			"Expected 'pool' at line %d col %d, got %s",
@@ -599,7 +583,7 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 
 func (p *Parser) parseBlockExpression() ast.Expression {
 
-	fmt.Println("PARSING BLOCK")
+	// fmt.Println("PARSING BLOCK")
 
 	block := &ast.BlockExpression{
 		Token:       p.curToken,
@@ -620,28 +604,27 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 	// Parse expressions until we hit closing brace
 	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
 		expr := p.parseExpression(LOWEST)
-		fmt.Println("Parse expresssssion", p.curToken.Literal)
-		
+		// fmt.Println("Parse expresssssion", p.curToken.Literal)
+
 		if expr == nil {
 			return nil
 		}
 
-
 		block.Expressions = append(block.Expressions, expr)
-		fmt.Println("In block parser", p.curToken.Literal)
+		// fmt.Println("In block parser", p.curToken.Literal)
 		// Require semicolon after each expression except the last one
 		if !p.peekTokenIs(lexer.RBRACE) {
 			if !p.expectAndPeek(lexer.SEMI) {
 				return nil
 			}
 			p.nextToken() // Move past semicolon
-		} else{
+		} else {
 			p.nextToken()
 		}
 
 	}
 
-	fmt.Println("At the end parser", p.curToken.Literal)
+	// fmt.Println("At the end parser", p.curToken.Literal)
 
 	// Check for closing brace
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -657,7 +640,7 @@ func (p *Parser) parseLetExpression() ast.Expression {
 	expr := &ast.LetExpression{Token: p.curToken}
 	expr.Bindings = []*ast.LetBinding{}
 
-	fmt.Println("============AT LET PARSER", p.curToken.Literal)
+	// fmt.Println("============AT LET PARSER", p.curToken.Literal)
 	for {
 		if !p.expectAndPeek(lexer.OBJECTID) {
 			return nil
@@ -700,14 +683,14 @@ func (p *Parser) parseLetExpression() ast.Expression {
 	}
 
 	p.nextToken() // move past IN
-	fmt.Println("Moved past IN", p.curToken.Literal)
+	// fmt.Println("Moved past IN", p.curToken.Literal)
 	// if current token is '{', parse block expression
 	if p.curTokenIs(lexer.LBRACE) {
 		expr.In = p.parseBlockExpression()
 	} else {
 		expr.In = p.parseExpression(LOWEST)
 	}
-	fmt.Println("Moved past block", p.curToken.Literal)
+	// fmt.Println("Moved past block", p.curToken.Literal)
 
 	return expr
 }

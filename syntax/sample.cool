@@ -1,0 +1,14 @@
+
+
+class A inherits String {
+    foo(x: Int): Int { x };
+};
+class B eats {
+
+};
+
+class Main {
+    main(): Object { 
+        while true loop 1 pool;
+    };
+};

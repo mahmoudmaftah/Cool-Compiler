@@ -6,6 +6,15 @@ import (
 	"fmt"
 )
 
+const (
+	SELF_TYPE = "SELF_TYPE"
+	OBJECT    = "Object"
+	IO        = "IO"
+	INT       = "Int"
+	STRING    = "String"
+	BOOL      = "Bool"
+)
+
 // For the semant we will use feature interface for (semantic analysis)
 type Feature interface {
 	GetName() string
@@ -83,17 +92,104 @@ type SemanticAnalyser struct {
 	errors            []string
 	inheritanceGraph  *InheritanceGraph
 	currentClass      string
+	currentMethod     string
+	variableInit      map[string]bool
+	basicClasses      map[string]bool // Track basic classes that can't be inherited from
+}
+
+type MethodSignature struct {
+	returnType string
+	paramTypes []string
+	class      string
+}
+
+func (sa *SemanticAnalyser) initBasicClassMethods() {
+	// Object methods
+	objectClass := sa.inheritanceGraph.classes[OBJECT]
+	objectClass.methods["abort"] = &Method{
+		name:    "abort",
+		retType: OBJECT,
+		formals: []*ast.Formal{},
+	}
+	objectClass.methods["type_name"] = &Method{
+		name:    "type_name",
+		retType: STRING,
+		formals: []*ast.Formal{},
+	}
+	objectClass.methods["copy"] = &Method{
+		name:    "copy",
+		retType: SELF_TYPE,
+		formals: []*ast.Formal{},
+	}
+
+	// IO methods
+	ioClass := sa.inheritanceGraph.classes[IO]
+	ioClass.methods["out_string"] = &Method{
+		name:    "out_string",
+		retType: SELF_TYPE,
+		formals: []*ast.Formal{
+			{TypeDecl: &ast.TypeIdentifier{Value: STRING}},
+		},
+	}
+	ioClass.methods["out_int"] = &Method{
+		name:    "out_int",
+		retType: SELF_TYPE,
+		formals: []*ast.Formal{
+			{TypeDecl: &ast.TypeIdentifier{Value: INT}},
+		},
+	}
+	ioClass.methods["in_string"] = &Method{
+		name:    "in_string",
+		retType: STRING,
+		formals: []*ast.Formal{},
+	}
+	ioClass.methods["in_int"] = &Method{
+		name:    "in_int",
+		retType: INT,
+		formals: []*ast.Formal{},
+	}
+
+	// String methods
+	stringClass := sa.inheritanceGraph.classes[STRING]
+	stringClass.methods["length"] = &Method{
+		name:    "length",
+		retType: INT,
+		formals: []*ast.Formal{},
+	}
+	stringClass.methods["concat"] = &Method{
+		name:    "concat",
+		retType: STRING,
+		formals: []*ast.Formal{
+			{TypeDecl: &ast.TypeIdentifier{Value: STRING}},
+		},
+	}
+	stringClass.methods["substr"] = &Method{
+		name:    "substr",
+		retType: STRING,
+		formals: []*ast.Formal{
+			{TypeDecl: &ast.TypeIdentifier{Value: INT}},
+			{TypeDecl: &ast.TypeIdentifier{Value: INT}},
+		},
+	}
 }
 
 func NewSemanticAnalyser() *SemanticAnalyser {
-	return &SemanticAnalyser{
+	sa := &SemanticAnalyser{
 		globalSymbolTable: NewSymbolTable(nil),
 		inheritanceGraph: &InheritanceGraph{
 			classes: make(map[string]*ClassNode),
-			roots:   []string{"Object"},
+			roots:   []string{OBJECT},
 		},
-		errors: []string{},
+		errors:       []string{},
+		basicClasses: make(map[string]bool),
 	}
+
+	// Initialize basic classes
+	sa.basicClasses[INT] = true
+	sa.basicClasses[STRING] = true
+	sa.basicClasses[BOOL] = true
+
+	return sa
 }
 
 // helper function to get all ancestors of a type including itself
@@ -200,9 +296,38 @@ func (sa *SemanticAnalyser) validateInheritanceGraph() {
 
 		temporary[className] = true
 		node := sa.inheritanceGraph.classes[className]
-		if node.parent != "" && detectCycle(node.parent) {
-			return true
+
+		// Check if parent exists
+		if node.parent != "" {
+			if _, exists := sa.inheritanceGraph.classes[node.parent]; !exists {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Class %s inherits from undefined class %s",
+					className, node.parent))
+				return true
+			}
+
+			// Check inheritance from basic classes
+			if sa.basicClasses[node.parent] {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Class %s cannot inherit from %s",
+					className, node.parent))
+				return true
+			}
+
+			// Check if trying to redefine basic classes or IO
+			if (className == INT || className == STRING || className == BOOL || className == IO) &&
+				node.parent != OBJECT {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Cannot redefine basic class %s",
+					className))
+				return true
+			}
+
+			if detectCycle(node.parent) {
+				return true
+			}
 		}
+
 		delete(temporary, className)
 		visited[className] = true
 		return false
@@ -282,20 +407,29 @@ func (sa *SemanticAnalyser) Errors() []string {
 
 func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
 
-	fmt.Println("Building inheritance graph...")
 	sa.initInheritanceGraph(program)
-	// print done building inheritance graph
-	fmt.Println("Done building inheritance graph")
-	sa.validateInheritanceGraph()
+	sa.initBasicClassMethods()
 
-	// print done building inheritance graph
-	fmt.Println("Done building and analyzing inheritance graph")
+	sa.validateInheritanceGraph()
 
 	sa.buildClassesSymboltables(program)
 	sa.buildSymboltables(program)
 
+	sa.validateMethodOverrides()
+
 	sa.validateMainClass()
 	sa.typeCheck(program)
+
+	// Check initialization for each method
+	for _, class := range program.Classes {
+		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
+		for _, feature := range class.Features {
+			if method, ok := feature.(*ast.Method); ok {
+				initialized := make(map[string]bool)
+				sa.checkInitialization(method.Body, classEntry.Scope, initialized)
+			}
+		}
+	}
 }
 
 func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
@@ -314,23 +448,287 @@ func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
 	}
 }
 
+// func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
+// 	for _, class := range program.Classes {
+// 		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
+// 		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
+
+// 		for _, feature := range class.Features {
+// 			switch f := feature.(type) {
+// 			case *ast.Attribute:
+// 				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
+// 					sa.errors = append(sa.errors, fmt.Sprintf("attribute %s is already defined in class %s", f.Name.Value, class.Name.Value))
+// 					continue
+// 				}
+// 				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, AttrType: f.TypeDecl})
+// 			case *ast.Method:
+// 				methodST := NewSymbolTable(classEntry.Scope)
+// 				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, Scope: methodST, Method: f})
+
+// 				// list all expressions in the method body
+// 				fmt.Println(f.Body)
+
+// 			}
+// 		}
+// 	}
+// }
+
+// Enhance buildSymboltables to handle all scopes
 func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
+	// First pass: Build class level symbol tables
 	for _, class := range program.Classes {
 		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
 		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
+		sa.currentClass = class.Name.Value
 
+		// Add attributes
 		for _, feature := range class.Features {
 			switch f := feature.(type) {
 			case *ast.Attribute:
 				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
-					sa.errors = append(sa.errors, fmt.Sprintf("attribute %s is already defined in class %s", f.Name.Value, class.Name.Value))
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"attribute %s is already defined in class %s",
+						f.Name.Value, class.Name.Value))
 					continue
 				}
-				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, AttrType: f.TypeDecl})
-			case *ast.Method:
-				methodST := NewSymbolTable(classEntry.Scope)
-				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, Scope: methodST, Method: f})
+				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{
+					Token:    f.Name.Token,
+					AttrType: f.TypeDecl,
+					Type:     f.TypeDecl.Value,
+				})
 			}
+		}
+
+		// Second pass: Build method symbol tables
+		for _, feature := range class.Features {
+			switch f := feature.(type) {
+			case *ast.Method:
+				sa.currentMethod = f.Name.Value
+				methodST := NewSymbolTable(classEntry.Scope)
+				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{
+					Token:  f.Name.Token,
+					Scope:  methodST,
+					Method: f,
+					Type:   f.TypeDecl.Value,
+				})
+
+				// Add formal parameters to method scope
+				for _, formal := range f.Formals {
+					methodST.AddEntry(formal.Name.Value, &SymbolEntry{
+						Token: formal.Name.Token,
+						Type:  formal.TypeDecl.Value,
+					})
+				}
+
+				// Build scope for method body
+				sa.buildExpressionScope(f.Body, methodST)
+			}
+		}
+	}
+}
+
+// New method to build scopes for expressions
+func (sa *SemanticAnalyser) buildExpressionScope(expr ast.Expression, parentScope *SymbolTable) *SymbolTable {
+	switch e := expr.(type) {
+	case *ast.LetExpression:
+		letScope := NewSymbolTable(parentScope)
+		for _, binding := range e.Bindings {
+			letScope.AddEntry(binding.Identifier.Value, &SymbolEntry{
+				Token: binding.Identifier.Token,
+				Type:  binding.Type.Value,
+			})
+			if binding.Init != nil {
+				sa.buildExpressionScope(binding.Init, letScope)
+			}
+		}
+		sa.buildExpressionScope(e.In, letScope)
+		return letScope
+
+	case *ast.BlockExpression:
+		blockScope := NewSymbolTable(parentScope)
+		for _, expr := range e.Expressions {
+			sa.buildExpressionScope(expr, blockScope)
+		}
+		return blockScope
+
+	case *ast.CaseExpression:
+		caseScope := NewSymbolTable(parentScope)
+		sa.buildExpressionScope(e.Expr, caseScope)
+		for _, branch := range e.Branches {
+			branchScope := NewSymbolTable(caseScope)
+			branchScope.AddEntry(branch.Pattern.Value, &SymbolEntry{
+				Token: branch.Pattern.Token,
+				Type:  branch.Type.Value,
+			})
+			sa.buildExpressionScope(branch.Expression, branchScope)
+		}
+		return caseScope
+
+	case *ast.IfExpression:
+		ifScope := NewSymbolTable(parentScope)
+		sa.buildExpressionScope(e.Condition, ifScope)
+		sa.buildExpressionScope(e.Consequence, ifScope)
+		sa.buildExpressionScope(e.Alternative, ifScope)
+		return ifScope
+
+	case *ast.WhileExpression:
+		whileScope := NewSymbolTable(parentScope)
+		sa.buildExpressionScope(e.Condition, whileScope)
+		sa.buildExpressionScope(e.Body, whileScope)
+		return whileScope
+
+	default:
+		return parentScope
+	}
+}
+
+// Add method override validation
+func (sa *SemanticAnalyser) validateMethodOverrides() {
+	for className, classNode := range sa.inheritanceGraph.classes {
+		if classNode.parent == "" {
+			continue
+		}
+
+		// Check if parent class exists
+		_, exists := sa.inheritanceGraph.classes[classNode.parent]
+		if !exists {
+			// Parent class doesn't exist - error already reported in validateInheritanceGraph
+			continue
+		}
+
+		// Check each method in the class
+		for methodName, method := range classNode.methods {
+			// Look for the same method in parent classes
+			currentParent := classNode.parent
+			for currentParent != "" {
+				parentClass, exists := sa.inheritanceGraph.classes[currentParent]
+				if !exists {
+					break // Stop if we hit a non-existent class
+				}
+
+				if parentMethod, exists := parentClass.methods[methodName]; exists {
+					// Validate method override
+					if !sa.isValidMethodOverride(parentMethod, method) {
+						sa.errors = append(sa.errors, fmt.Sprintf(
+							"Invalid method override: %s.%s doesn't match parent class %s",
+							className, methodName, currentParent))
+					}
+					break
+				}
+				currentParent = parentClass.parent
+			}
+		}
+	}
+}
+
+// Helper method to validate method overrides
+func (sa *SemanticAnalyser) isValidMethodOverride(parent, child *Method) bool {
+	// Handle SELF_TYPE in return types
+	parentRetType := sa.resolveSelfType(parent.retType)
+	childRetType := sa.resolveSelfType(child.retType)
+
+	// Return types must be exactly the same when resolved
+	if parentRetType != childRetType {
+		return false
+	}
+
+	// Check number of parameters
+	if len(parent.formals) != len(child.formals) {
+		return false
+	}
+
+	// Parameter types must match exactly
+	for i := 0; i < len(parent.formals); i++ {
+		// Check for nil pointers
+		if parent.formals[i] == nil || parent.formals[i].TypeDecl == nil ||
+			child.formals[i] == nil || child.formals[i].TypeDecl == nil {
+			return false
+		}
+
+		parentParamType := sa.resolveSelfType(parent.formals[i].TypeDecl.Value)
+		childParamType := sa.resolveSelfType(child.formals[i].TypeDecl.Value)
+
+		// Verify both types exist in the class hierarchy
+		if _, exists := sa.inheritanceGraph.classes[parentParamType]; !exists {
+			return false
+		}
+		if _, exists := sa.inheritanceGraph.classes[childParamType]; !exists {
+			return false
+		}
+
+		if parentParamType != childParamType {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (sa *SemanticAnalyser) resolveSelfType(typeName string) string {
+	if typeName == SELF_TYPE {
+		return sa.currentClass
+	}
+	return typeName
+}
+
+// Add initialization checking
+func (sa *SemanticAnalyser) checkInitialization(expr ast.Expression, st *SymbolTable, initialized map[string]bool) {
+	switch e := expr.(type) {
+	case *ast.ObjectIdentifier:
+		// Check if variable is initialized before use
+		if _, exists := initialized[e.Value]; !exists {
+			if entry, ok := st.Lookup(e.Value); ok {
+				if entry.AttrType == nil { // Not an attribute (which has default initialization)
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"Variable %s used before initialization",
+						e.Value))
+				}
+			}
+		}
+
+	case *ast.Assignment:
+		// Mark variable as initialized
+		initialized[e.Name.Value] = true
+		sa.checkInitialization(e.Value, st, initialized)
+
+	case *ast.LetExpression:
+		// Create new initialization map for let scope
+		letInit := make(map[string]bool)
+		for k, v := range initialized {
+			letInit[k] = v
+		}
+
+		for _, binding := range e.Bindings {
+			if binding.Init != nil {
+				sa.checkInitialization(binding.Init, st, letInit)
+				letInit[binding.Identifier.Value] = true
+			}
+		}
+		sa.checkInitialization(e.In, st, letInit)
+
+	// Add cases for other expression types...
+	case *ast.BlockExpression:
+		for _, expr := range e.Expressions {
+			sa.checkInitialization(expr, st, initialized)
+		}
+
+	case *ast.IfExpression:
+		sa.checkInitialization(e.Condition, st, initialized)
+
+		// Track initialization in both branches
+		thenInit := make(map[string]bool)
+		elseInit := make(map[string]bool)
+		for k, v := range initialized {
+			thenInit[k] = v
+			elseInit[k] = v
+		}
+
+		sa.checkInitialization(e.Consequence, st, thenInit)
+		sa.checkInitialization(e.Alternative, st, elseInit)
+
+		// Variable is only considered initialized if it's initialized in both branches
+		for k := range initialized {
+			initialized[k] = thenInit[k] && elseInit[k]
 		}
 	}
 }
