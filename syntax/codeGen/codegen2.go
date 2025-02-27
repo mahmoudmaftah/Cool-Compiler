@@ -116,7 +116,26 @@ func (cg *CodeGenerator) declareStandardCFunctions() {
 	printfFunc.Sig.Variadic = true // Mark as variadic
 	cg.cFuncs["printf"] = printfFunc
 
-	// Remove the scanf declaration entirely
+	// atoi - converts a string to an integer
+	cg.cFuncs["atoi"] = cg.Module.NewFunc("atoi", types.I32,
+		ir.NewParam("str", types.NewPointer(types.I8)))
+	cg.cFuncs["atoi"].Linkage = enum.LinkageExternal
+
+	// scanf - variadic function
+	scanfFunc := cg.Module.NewFunc("scanf", types.I32,
+		ir.NewParam("format", types.NewPointer(types.I8)))
+	scanfFunc.Sig.Variadic = true // Mark as variadic
+	cg.cFuncs["scanf"] = scanfFunc
+
+	// gets - reads a line from stdin
+	getsFunc := cg.Module.NewFunc("gets", types.NewPointer(types.I8),
+		ir.NewParam("s", types.NewPointer(types.I8)))
+	cg.cFuncs["gets"] = getsFunc
+
+	// puts - writes a line to stdout
+	putsFunc := cg.Module.NewFunc("puts", types.I32,
+		ir.NewParam("s", types.NewPointer(types.I8)))
+	cg.cFuncs["puts"] = putsFunc
 
 	// strlen
 	cg.cFuncs["strlen"] = cg.Module.NewFunc("strlen", types.I64,

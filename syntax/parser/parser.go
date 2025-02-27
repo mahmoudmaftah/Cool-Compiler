@@ -393,48 +393,57 @@ func (p *Parser) parseMethod() *ast.Method {
 }
 
 // Update parseIdentifier to handle method calls
-func (p *Parser) parseIdentifier() ast.Expression {
-	expr := &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+// func (p *Parser) parseIdentifier() ast.Expression {
+// 	expr := &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
-	// If next token is '(', this is a method call
-	if p.peekTokenIs(lexer.LPAREN) {
-		p.nextToken() // Move to '('
-		p.nextToken() // Move past '('
+// 	fmt.Println("HERE")
+// 	// If next token is '(', this is a method call
+// 	if p.peekTokenIs(lexer.LPAREN) {
+// 		p.nextToken() // Move to '('
 
-		dispatch := &ast.DispatchExpression{
-			Token:     expr.Token,
-			Method:    &ast.ObjectIdentifier{Token: expr.Token, Value: expr.Value},
-			Arguments: []ast.Expression{},
-		}
+// 		dispatch := &ast.DispatchExpression{
+// 			Token:     expr.Token,
+// 			Method:    &ast.ObjectIdentifier{Token: expr.Token, Value: expr.Value},
+// 			Arguments: []ast.Expression{},
+// 		}
 
-		// If not empty argument list
-		if !p.curTokenIs(lexer.RPAREN) {
-			// Parse first argument
-			arg := p.parseExpression(LOWEST)
-			if arg != nil {
-				dispatch.Arguments = append(dispatch.Arguments, arg)
-			}
+// 		// Check if the next token is ')', indicating an empty argument list
+// 		if p.peekTokenIs(lexer.RPAREN) {
+// 			fmt.Println("HERE")
+// 			p.nextToken() // Move to ')'
+// 			p.nextToken() // Move past ')'
+// 			return dispatch
+// 		}
 
-			// Parse remaining arguments
-			for p.peekTokenIs(lexer.COMMA) {
-				p.nextToken() // Move to comma
-				p.nextToken() // Move past comma
-				arg = p.parseExpression(LOWEST)
-				if arg != nil {
-					dispatch.Arguments = append(dispatch.Arguments, arg)
-				}
-			}
-		}
+// 		// Otherwise, parse arguments
+// 		p.nextToken() // Move past '('
 
-		if !p.expectAndPeek(lexer.RPAREN) {
-			return nil
-		}
+// 		// Parse first argument
+// 		arg := p.parseExpression(LOWEST)
+// 		if arg != nil {
+// 			dispatch.Arguments = append(dispatch.Arguments, arg)
+// 		}
 
-		return dispatch
-	}
+// 		// Parse remaining arguments
+// 		for p.peekTokenIs(lexer.COMMA) {
+// 			p.nextToken() // Move to comma
+// 			p.nextToken() // Move past comma
+// 			arg = p.parseExpression(LOWEST)
+// 			if arg != nil {
+// 				dispatch.Arguments = append(dispatch.Arguments, arg)
+// 			}
+// 		}
 
-	return expr
-}
+// 		// Ensure we end with a closing parenthesis
+// 		if !p.expectAndPeek(lexer.RPAREN) {
+// 			return nil
+// 		}
+
+// 		return dispatch
+// 	}
+
+// 	return expr
+// }
 
 func (p *Parser) parseFormals() []*ast.Formal {
 	var formals []*ast.Formal
@@ -792,25 +801,57 @@ func (p *Parser) parseDispatchExpression(object ast.Expression) ast.Expression {
 func (p *Parser) parseExpressionList(end lexer.TokenType) []ast.Expression {
 	list := []ast.Expression{}
 
+	// If next token is the ending token (e.g., ')'), just consume it and return empty list
 	if p.peekTokenIs(end) {
-		p.nextToken()
+		p.nextToken() // Move to the ending token
 		return list
 	}
 
-	p.nextToken()
-	list = append(list, p.parseExpression(LOWEST))
+	p.nextToken() // Move past opening token
 
-	for p.peekTokenIs(lexer.COMMA) {
-		p.nextToken()
-		p.nextToken()
-		list = append(list, p.parseExpression(LOWEST))
+	// Parse first expression
+	expr := p.parseExpression(LOWEST)
+	if expr != nil {
+		list = append(list, expr)
 	}
 
+	// Parse additional expressions
+	for p.peekTokenIs(lexer.COMMA) {
+		p.nextToken() // Move to comma
+		p.nextToken() // Move past comma
+		expr = p.parseExpression(LOWEST)
+		if expr != nil {
+			list = append(list, expr)
+		}
+	}
+
+	// Ensure we end with the expected closing token
 	if !p.expectAndPeek(end) {
 		return nil
 	}
 
 	return list
+}
+
+// Fix 2: Update parseIdentifier to remove the empty argument list special handling
+// and just rely on parseExpressionList
+func (p *Parser) parseIdentifier() ast.Expression {
+	expr := &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	// If next token is '(', this is a method call
+	if p.peekTokenIs(lexer.LPAREN) {
+		p.nextToken() // Move to '('
+
+		dispatch := &ast.DispatchExpression{
+			Token:     expr.Token,
+			Method:    &ast.ObjectIdentifier{Token: expr.Token, Value: expr.Value},
+			Arguments: p.parseExpressionList(lexer.RPAREN),
+		}
+
+		return dispatch
+	}
+
+	return expr
 }
 
 func (p *Parser) parseGroupedExpression() ast.Expression {

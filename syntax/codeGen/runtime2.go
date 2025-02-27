@@ -73,25 +73,46 @@ func (cg *CodeGenerator) generateIOFunctions() {
 	// Return self
 	entryInt.NewRet(selfInt)
 
-	// Implement IO_in_string - without using scanf
+	// Implement IO_in_string using gets
 	inString := cg.runtimeFuncs["IO_in_string"]
-	entryInStr := inString.NewBlock("entry")
+	entryIn := inString.NewBlock("entry")
 
-	// For a simple implementation, just return an empty string
-	// This is a workaround to avoid scanf
-	emptyStr := cg.createStringConstant(entryInStr, ".str.empty", "\x00")
+	// Get parameter
+	selfIn := inString.Params[0]
 
-	// Since we're just running a simple "hello world" program,
-	// we don't actually need input functionality
-	entryInStr.NewRet(emptyStr)
+	// Allocate memory for string
+	strPtr := entryIn.NewCall(cg.runtimeFuncs["GC_malloc"], constant.NewInt(types.I64, 1024))
 
-	// Implement IO_in_int - without using scanf
+	// Call gets - using the predefined function
+	entryIn.NewCall(cg.cFuncs["gets"], strPtr)
+
+	// Return self
+	entryIn.NewRet(selfIn)
+
+
+
+
+
+	
+	// Implement IO_in_int using gets and atoi
 	inInt := cg.runtimeFuncs["IO_in_int"]
 	entryInInt := inInt.NewBlock("entry")
 
-	// For a simple implementation, just return 0
-	// This is a workaround to avoid scanf
-	entryInInt.NewRet(constant.NewInt(types.I32, 0))
+	// Get parameter
+	// selfInInt := inInt.Params[0]
+
+	// Allocate memory for string
+	strPtrInt := entryInInt.NewCall(cg.runtimeFuncs["GC_malloc"], constant.NewInt(types.I64, 1024))
+
+	// Call gets - using the predefined function
+	entryInInt.NewCall(cg.cFuncs["gets"], strPtrInt)
+
+	// Convert string to int
+	intVal := entryInInt.NewCall(cg.cFuncs["atoi"], strPtrInt)
+
+	// Return the integer
+	entryInInt.NewRet(intVal)
+
 }
 
 // Modified generateStringFunctions to use predefined C functions
@@ -225,20 +246,3 @@ func (cg *CodeGenerator) generateObjectMethods() {
 	entryCopy.NewRet(copyFunc.Params[0])
 	cg.methods["Object"]["copy"] = copyFunc
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
