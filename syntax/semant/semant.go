@@ -279,63 +279,47 @@ func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 	}
 }
 
-// Validates if the inheritance graph is a directed acyclic graph
-func (sa *SemanticAnalyser) validateInheritanceGraph() {
-	visited := make(map[string]bool)
-	temporary := make(map[string]bool)
-
-	var detectCycle func(className string) bool
-	detectCycle = func(className string) bool {
-		if temporary[className] {
-			sa.errors = append(sa.errors, fmt.Sprintf("Inheritance cycle detected involving class %s", className))
-			return true
-		}
-		if visited[className] {
-			return false
+func (sa *SemanticAnalyser) validateClassMethodAccess() {
+	// For each class, check method access
+	for className, classNode := range sa.inheritanceGraph.classes {
+		// Skip basic classes that are already validated
+		if className == "Object" || className == "Int" ||
+			className == "Bool" || className == "String" {
+			continue
 		}
 
-		temporary[className] = true
-		node := sa.inheritanceGraph.classes[className]
-
-		// Check if parent exists
-		if node.parent != "" {
-			if _, exists := sa.inheritanceGraph.classes[node.parent]; !exists {
-				sa.errors = append(sa.errors, fmt.Sprintf(
-					"Class %s inherits from undefined class %s",
-					className, node.parent))
-				return true
-			}
-
-			// Check inheritance from basic classes
-			if sa.basicClasses[node.parent] {
-				sa.errors = append(sa.errors, fmt.Sprintf(
-					"Class %s cannot inherit from %s",
-					className, node.parent))
-				return true
-			}
-
-			// Check if trying to redefine basic classes or IO
-			if (className == INT || className == STRING || className == BOOL || className == IO) &&
-				node.parent != OBJECT {
-				sa.errors = append(sa.errors, fmt.Sprintf(
-					"Cannot redefine basic class %s",
-					className))
-				return true
-			}
-
-			if detectCycle(node.parent) {
-				return true
+		// Check IO class specifically for the output/input methods
+		if className == "IO" {
+			requiredMethods := []string{"out_string", "out_int", "in_string", "in_int"}
+			for _, methodName := range requiredMethods {
+				if _, exists := classNode.methods[methodName]; !exists {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"IO class is missing required method: %s",
+						methodName))
+				}
 			}
 		}
 
-		delete(temporary, className)
-		visited[className] = true
-		return false
-	}
+		// For each class that inherits from IO, ensure it has the IO methods
+		if sa.isTypeConformant(className, "IO") {
+			ioMethods := []string{"out_string", "out_int", "in_string", "in_int"}
+			for _, methodName := range ioMethods {
+				if _, _, exists := sa.findMethodInClassAndAncestors(className, methodName); !exists {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"Class %s inherits from IO but cannot access method %s",
+						className, methodName))
+				}
+			}
+		}
 
-	for className := range sa.inheritanceGraph.classes {
-		if !visited[className] {
-			detectCycle(className)
+		// All classes should have Object methods
+		objectMethods := []string{"abort", "type_name", "copy"}
+		for _, methodName := range objectMethods {
+			if _, _, exists := sa.findMethodInClassAndAncestors(className, methodName); !exists {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Class %s cannot access required Object method %s",
+					className, methodName))
+			}
 		}
 	}
 }
@@ -359,73 +343,163 @@ func (sa *SemanticAnalyser) validateMainClass() {
 	}
 }
 
-// Checks if type1 conforms to type2 (i.e. type1 is a subtype of type2)
-func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
-	if type1 == type2 {
-		return true
-	}
-
-	// Invalid types should not conform
-	if _, exists := sa.inheritanceGraph.classes[type1]; !exists {
-		return false
-	}
-	if _, exists := sa.inheritanceGraph.classes[type2]; !exists {
-		return false
-	}
-
-	// Handle SELF_TYPE special cases
-	if type1 == "SELF_TYPE" {
-		if type2 == "SELF_TYPE" {
-			return true
-		}
-		type1 = sa.currentClass
-	}
-	if type2 == "SELF_TYPE" {
-		type2 = sa.currentClass
-	}
-
-	// Walk the inheritance graph to check if type1 is a subtype of type2
-	current := type1
-	for current != "" {
-		if current == type2 {
-			return true
-		}
-		node, exists := sa.inheritanceGraph.classes[current]
-		if !exists {
-			return false
-		}
-		current = node.parent
-	}
-	return false
-
-}
-
 // Returns the list of errors encountered during semantic analysis
 func (sa *SemanticAnalyser) Errors() []string {
 	return sa.errors
 }
 
-func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
+// Fixed validateInheritanceGraph to properly detect cycles
+func (sa *SemanticAnalyser) validateInheritanceGraph() bool {
+	visited := make(map[string]bool)
+	inProgress := make(map[string]bool)
+	hasErrors := false
 
+	var detectCycle func(className string) bool
+	detectCycle = func(className string) bool {
+		// If we're currently visiting this class, we found a cycle
+		if inProgress[className] {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Inheritance cycle detected involving class %s",
+				className))
+			return true
+		}
+
+		// If already fully visited, no need to check again
+		if visited[className] {
+			return false
+		}
+
+		// Mark as in-progress for cycle detection
+		inProgress[className] = true
+
+		// Get the class node
+		node, exists := sa.inheritanceGraph.classes[className]
+		if !exists {
+			// Should never happen, but just in case
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Internal error: Class %s not found in inheritance graph",
+				className))
+			hasErrors = true
+			return true
+		}
+
+		// Check if parent exists
+		if node.parent != "" {
+			if _, exists := sa.inheritanceGraph.classes[node.parent]; !exists {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Class %s inherits from undefined class %s",
+					className, node.parent))
+				hasErrors = true
+				return true
+			}
+
+			// Check inheritance from basic classes
+			if sa.basicClasses[node.parent] {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Class %s cannot inherit from %s",
+					className, node.parent))
+				hasErrors = true
+				return true
+			}
+
+			// Check if trying to redefine basic classes or IO
+			if (className == INT || className == STRING || className == BOOL || className == IO) &&
+				node.parent != OBJECT {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Cannot redefine basic class %s",
+					className))
+				hasErrors = true
+				return true
+			}
+
+			// Recursively check parent for cycles
+			if detectCycle(node.parent) {
+				hasErrors = true
+				return true
+			}
+		}
+
+		// Done visiting this class
+		delete(inProgress, className)
+		visited[className] = true
+		return false
+	}
+
+	// Check all classes for cycles
+	for className := range sa.inheritanceGraph.classes {
+		if !visited[className] {
+			if detectCycle(className) {
+				hasErrors = true
+			}
+		}
+	}
+
+	return !hasErrors
+}
+
+// Updated Analyze method to stop after cycle detection if errors found
+func (sa *SemanticAnalyser) Analyze(program *ast.Program) {
+	// First phase: Build the inheritance graph
 	sa.initInheritanceGraph(program)
 	sa.initBasicClassMethods()
 
-	sa.validateInheritanceGraph()
+	// Validate the inheritance graph
+	if !sa.validateInheritanceGraph() {
+		return
+	}
 
+	// Build symbol tables
 	sa.buildClassesSymboltables(program)
 	sa.buildSymboltables(program)
 
+	// Second phase: Collect inherited methods and validate method overrides
+	sa.collectInheritedMethods()
 	sa.validateMethodOverrides()
 
+	// Validate method access
+	sa.validateClassMethodAccess()
+
+	// Validate Main class
 	sa.validateMainClass()
+
+	// Type check the program
 	sa.typeCheck(program)
 
-	// Check initialization for each method
+	// Variable initialization checking
 	for _, class := range program.Classes {
-		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
+		classEntry, ok := sa.globalSymbolTable.Lookup(class.Name.Value)
+		if !ok {
+			continue // Skip if class entry not found (shouldn't happen)
+		}
+
+		// Save current class context
+		sa.currentClass = class.Name.Value
+
 		for _, feature := range class.Features {
 			if method, ok := feature.(*ast.Method); ok {
+				sa.currentMethod = method.Name.Value
 				initialized := make(map[string]bool)
+
+				// Add formal parameters as initialized
+				for _, formal := range method.Formals {
+					initialized[formal.Name.Value] = true
+				}
+
+				// Add all class attributes as initialized
+				// In Cool, attributes are always initialized before methods are called
+				current := sa.currentClass
+				for current != "" {
+					if classNode, exists := sa.inheritanceGraph.classes[current]; exists {
+						for attrName := range classNode.attrs {
+							initialized[attrName] = true
+						}
+						current = classNode.parent
+					} else {
+						break
+					}
+				}
+
+				// Check body initialization
 				sa.checkInitialization(method.Body, classEntry.Scope, initialized)
 			}
 		}
@@ -448,55 +522,30 @@ func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
 	}
 }
 
-// func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
-// 	for _, class := range program.Classes {
-// 		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
-// 		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
-
-// 		for _, feature := range class.Features {
-// 			switch f := feature.(type) {
-// 			case *ast.Attribute:
-// 				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
-// 					sa.errors = append(sa.errors, fmt.Sprintf("attribute %s is already defined in class %s", f.Name.Value, class.Name.Value))
-// 					continue
-// 				}
-// 				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, AttrType: f.TypeDecl})
-// 			case *ast.Method:
-// 				methodST := NewSymbolTable(classEntry.Scope)
-// 				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{Token: f.Name.Token, Scope: methodST, Method: f})
-
-// 				// list all expressions in the method body
-// 				fmt.Println(f.Body)
-
-// 			}
-// 		}
-// 	}
-// }
-
 // Enhance buildSymboltables to handle all scopes
 func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
+	// First make sure inheritance is properly set up
+	sa.collectInheritedMethods()
+
 	// First pass: Build class level symbol tables
 	for _, class := range program.Classes {
 		classEntry, _ := sa.globalSymbolTable.Lookup(class.Name.Value)
 		classEntry.Scope = NewSymbolTable(sa.globalSymbolTable)
-		sa.currentClass = class.Name.Value
+		sa.currentClass = class.Name.Value // Set current class here
 
-		// Add attributes
-		for _, feature := range class.Features {
-			switch f := feature.(type) {
-			case *ast.Attribute:
-				if _, ok := classEntry.Scope.Lookup(f.Name.Value); ok {
-					sa.errors = append(sa.errors, fmt.Sprintf(
-						"attribute %s is already defined in class %s",
-						f.Name.Value, class.Name.Value))
-					continue
-				}
-				classEntry.Scope.AddEntry(f.Name.Value, &SymbolEntry{
-					Token:    f.Name.Token,
-					AttrType: f.TypeDecl,
-					Type:     f.TypeDecl.Value,
-				})
-			}
+		// Add 'self' to class scope
+		classEntry.Scope.AddEntry("self", &SymbolEntry{
+			Type:  sa.currentClass,
+			Token: lexer.Token{Literal: "self"},
+		})
+
+		// Add attributes - including inherited ones
+		classNode := sa.inheritanceGraph.classes[class.Name.Value]
+		for attrName, attr := range classNode.attrs {
+			classEntry.Scope.AddEntry(attrName, &SymbolEntry{
+				Token: lexer.Token{Literal: attrName},
+				Type:  attr.attrType,
+			})
 		}
 
 		// Second pass: Build method symbol tables
@@ -512,8 +561,22 @@ func (sa *SemanticAnalyser) buildSymboltables(program *ast.Program) {
 					Type:   f.TypeDecl.Value,
 				})
 
+				// Add 'self' to method scope
+				methodST.AddEntry("self", &SymbolEntry{
+					Type:  sa.currentClass,
+					Token: lexer.Token{Literal: "self"},
+				})
+
 				// Add formal parameters to method scope
 				for _, formal := range f.Formals {
+					// Check for duplicate parameter names
+					if _, exists := methodST.symbols[formal.Name.Value]; exists {
+						sa.errors = append(sa.errors, fmt.Sprintf(
+							"Duplicate formal parameter %s in method %s",
+							formal.Name.Value, f.Name.Value))
+						continue
+					}
+
 					methodST.AddEntry(formal.Name.Value, &SymbolEntry{
 						Token: formal.Name.Token,
 						Type:  formal.TypeDecl.Value,
@@ -598,6 +661,12 @@ func (sa *SemanticAnalyser) validateMethodOverrides() {
 
 		// Check each method in the class
 		for methodName, method := range classNode.methods {
+			// Special case for constructors (init methods)
+			if methodName == "init" {
+				// Skip strict validation for constructors
+				continue
+			}
+
 			// Look for the same method in parent classes
 			currentParent := classNode.parent
 			for currentParent != "" {
@@ -624,12 +693,30 @@ func (sa *SemanticAnalyser) validateMethodOverrides() {
 // Helper method to validate method overrides
 func (sa *SemanticAnalyser) isValidMethodOverride(parent, child *Method) bool {
 	// Handle SELF_TYPE in return types
-	parentRetType := sa.resolveSelfType(parent.retType)
-	childRetType := sa.resolveSelfType(child.retType)
+	parentRetType := parent.retType
+	childRetType := child.retType
 
-	// Return types must be exactly the same when resolved
-	if parentRetType != childRetType {
-		return false
+	// If both are SELF_TYPE, they match
+	if parentRetType == SELF_TYPE && childRetType == SELF_TYPE {
+		return true
+	}
+
+	// If both are not SELF_TYPE, then resolve and compare
+	if parentRetType != SELF_TYPE && childRetType != SELF_TYPE {
+		// For non-SELF_TYPE returns, they must be identical
+		if parentRetType != childRetType {
+			return false
+		}
+	} else {
+		// One is SELF_TYPE and one isn't - this is generally invalid
+		// Unless the child is returning SELF_TYPE and parent returns a class
+		// that the child inherits from
+		if childRetType == SELF_TYPE && parentRetType != SELF_TYPE {
+			// Allow this case if the class is a subclass of the parent's return type
+			return sa.isTypeConformant(sa.currentClass, parentRetType)
+		} else {
+			return false
+		}
 	}
 
 	// Check number of parameters
@@ -645,17 +732,10 @@ func (sa *SemanticAnalyser) isValidMethodOverride(parent, child *Method) bool {
 			return false
 		}
 
-		parentParamType := sa.resolveSelfType(parent.formals[i].TypeDecl.Value)
-		childParamType := sa.resolveSelfType(child.formals[i].TypeDecl.Value)
+		parentParamType := parent.formals[i].TypeDecl.Value
+		childParamType := child.formals[i].TypeDecl.Value
 
-		// Verify both types exist in the class hierarchy
-		if _, exists := sa.inheritanceGraph.classes[parentParamType]; !exists {
-			return false
-		}
-		if _, exists := sa.inheritanceGraph.classes[childParamType]; !exists {
-			return false
-		}
-
+		// Parameter types must be identical
 		if parentParamType != childParamType {
 			return false
 		}
@@ -675,10 +755,36 @@ func (sa *SemanticAnalyser) resolveSelfType(typeName string) string {
 func (sa *SemanticAnalyser) checkInitialization(expr ast.Expression, st *SymbolTable, initialized map[string]bool) {
 	switch e := expr.(type) {
 	case *ast.ObjectIdentifier:
+		// Check if this is 'self' (always initialized)
+		if e.Value == "self" {
+			return
+		}
+
 		// Check if variable is initialized before use
 		if _, exists := initialized[e.Value]; !exists {
+			// Look up in symbol table
 			if entry, ok := st.Lookup(e.Value); ok {
-				if entry.AttrType == nil { // Not an attribute (which has default initialization)
+				// Check if it's a class attribute
+				isAttribute := false
+
+				// Check if this identifier is an attribute in the current class hierarchy
+				current := sa.currentClass
+				for current != "" {
+					if classNode, exists := sa.inheritanceGraph.classes[current]; exists {
+						if _, found := classNode.attrs[e.Value]; found {
+							// It's an attribute, consider it initialized
+							isAttribute = true
+							break
+						}
+						current = classNode.parent
+					} else {
+						break
+					}
+				}
+
+				// Only report error if it's not an attribute and not self
+				if !isAttribute && entry.AttrType == nil && e.Value != "self" {
+					// Local variable - warn about using before initialization
 					sa.errors = append(sa.errors, fmt.Sprintf(
 						"Variable %s used before initialization",
 						e.Value))
@@ -687,49 +793,137 @@ func (sa *SemanticAnalyser) checkInitialization(expr ast.Expression, st *SymbolT
 		}
 
 	case *ast.Assignment:
-		// Mark variable as initialized
-		initialized[e.Name.Value] = true
+		// First check that the right side doesn't use the variable being assigned
 		sa.checkInitialization(e.Value, st, initialized)
 
+		// Now mark the variable as initialized
+		initialized[e.Name.Value] = true
+
 	case *ast.LetExpression:
-		// Create new initialization map for let scope
+		// Create a new initialization map for let scope
 		letInit := make(map[string]bool)
 		for k, v := range initialized {
 			letInit[k] = v
 		}
 
+		// Process each binding
 		for _, binding := range e.Bindings {
+			// Check initialization expression if present
 			if binding.Init != nil {
 				sa.checkInitialization(binding.Init, st, letInit)
-				letInit[binding.Identifier.Value] = true
 			}
+
+			// Mark the binding as initialized (even without init, Cool gives default values)
+			letInit[binding.Identifier.Value] = true
 		}
+
+		// Check the body with the new initialization state
 		sa.checkInitialization(e.In, st, letInit)
 
-	// Add cases for other expression types...
 	case *ast.BlockExpression:
+		// Pass initialization state through each expression in sequence
 		for _, expr := range e.Expressions {
 			sa.checkInitialization(expr, st, initialized)
 		}
 
 	case *ast.IfExpression:
+		// Check condition first
 		sa.checkInitialization(e.Condition, st, initialized)
 
-		// Track initialization in both branches
+		// Track initialization separately in each branch
 		thenInit := make(map[string]bool)
 		elseInit := make(map[string]bool)
+
+		// Start with current initialization state
 		for k, v := range initialized {
 			thenInit[k] = v
 			elseInit[k] = v
 		}
 
+		// Check each branch
 		sa.checkInitialization(e.Consequence, st, thenInit)
 		sa.checkInitialization(e.Alternative, st, elseInit)
 
-		// Variable is only considered initialized if it's initialized in both branches
+		// A variable is considered initialized only if initialized in both branches
 		for k := range initialized {
 			initialized[k] = thenInit[k] && elseInit[k]
 		}
+
+	case *ast.WhileExpression:
+		// Check condition
+		sa.checkInitialization(e.Condition, st, initialized)
+
+		// Create a copy of initialization state for the loop body
+		loopInit := make(map[string]bool)
+		for k, v := range initialized {
+			loopInit[k] = v
+		}
+
+		// Check loop body
+		sa.checkInitialization(e.Body, st, loopInit)
+
+		// No changes to initialization state from the loop body
+		// (conservative approach since we can't know if the loop executes)
+
+	case *ast.CaseExpression:
+		// Check the case expression
+		sa.checkInitialization(e.Expr, st, initialized)
+
+		// Track initialization for each branch
+		branchInits := make([]map[string]bool, len(e.Branches))
+
+		// Check each branch with independent initialization state
+		for i, branch := range e.Branches {
+			branchInit := make(map[string]bool)
+			for k, v := range initialized {
+				branchInit[k] = v
+			}
+
+			// The pattern variable is initialized in the branch
+			branchInit[branch.Pattern.Value] = true
+
+			// Check the branch expression
+			sa.checkInitialization(branch.Expression, st, branchInit)
+
+			// Save this branch's final state
+			branchInits[i] = branchInit
+		}
+
+		// A variable is initialized only if it's initialized in all branches
+		if len(branchInits) > 0 {
+			for k := range initialized {
+				allInitialized := true
+				for _, branchInit := range branchInits {
+					if !branchInit[k] {
+						allInitialized = false
+						break
+					}
+				}
+				initialized[k] = allInitialized
+			}
+		}
+
+	case *ast.DispatchExpression:
+		// Check the object and arguments
+		if e.Object != nil {
+			sa.checkInitialization(e.Object, st, initialized)
+		}
+
+		for _, arg := range e.Arguments {
+			sa.checkInitialization(arg, st, initialized)
+		}
+
+	case *ast.BinaryExpression:
+		sa.checkInitialization(e.Left, st, initialized)
+		sa.checkInitialization(e.Right, st, initialized)
+
+	case *ast.UnaryExpression:
+		sa.checkInitialization(e.Right, st, initialized)
+
+	case *ast.IsVoidExpression:
+		sa.checkInitialization(e.Expression, st, initialized)
+
+		// No need to check initialization for literals, new expressions
 	}
 }
 
@@ -752,32 +946,50 @@ func (sa *SemanticAnalyser) typeCheckClass(cls *ast.Class, st *SymbolTable) {
 }
 
 func (sa *SemanticAnalyser) typeCheckAttribute(attribute *ast.Attribute, st *SymbolTable) {
-
-	if _, exists := sa.inheritanceGraph.classes[attribute.TypeDecl.Value]; !exists {
-		sa.errors = append(sa.errors, fmt.Sprintf(
-			"Attribute %s has undefined type %s",
-			attribute.Name.Value, attribute.TypeDecl.Value))
-		return
+	// Check if the declared type exists
+	if attribute.TypeDecl.Value != "SELF_TYPE" {
+		if _, exists := sa.inheritanceGraph.classes[attribute.TypeDecl.Value]; !exists {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Attribute %s has undefined type %s",
+				attribute.Name.Value, attribute.TypeDecl.Value))
+			return
+		}
 	}
 
+	// Check initialization if provided
 	if attribute.Init != nil {
-		initType := sa.getExpressionType(attribute.Init, st)
-		if !sa.isTypeConformant(initType, attribute.TypeDecl.Value) {
+		// Create a temporary scope for the initialization context
+		// 'self' is in scope for attribute initializations
+		initScope := NewSymbolTable(st)
+		initScope.AddEntry("self", &SymbolEntry{
+			Type:  sa.currentClass,
+			Token: lexer.Token{Literal: "self"},
+		})
+
+		// Get the type of the initialization expression
+		initType := sa.getExpressionType(attribute.Init, initScope)
+
+		// Resolve the declared type if it's SELF_TYPE
+		declaredType := attribute.TypeDecl.Value
+		if declaredType == "SELF_TYPE" {
+			declaredType = sa.currentClass
+		}
+
+		// Check type conformance
+		if !sa.isTypeConformant(initType, declaredType) {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Attribute %s initialization type %s does not conform to declared type %s",
 				attribute.Name.Value, initType, attribute.TypeDecl.Value))
 		}
 	}
-
 }
 
 func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable) {
 	methodSt := NewSymbolTable(st)
 
-	// we will first check for duplicate formal parameters
+	// We will first check for duplicate formal parameters
 	seenParams := make(map[string]bool)
 	for _, formal := range method.Formals {
-		fmt.Println(formal.Name.Value)
 		if seenParams[formal.Name.Value] {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Formal parameter %s is multiply defined in method %s from class %s",
@@ -811,12 +1023,6 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 
 	// Type check method body
 	bodyType := sa.getExpressionType(method.Body, methodSt)
-
-	// fmt.Println(method.Body)
-
-	// print the method name and the body type
-	// fmt.Println(method.Name.Value)
-	// fmt.Println(bodyType)
 
 	// Handle SELF_TYPE in return type
 	expectedType := method.TypeDecl.Value
@@ -873,6 +1079,41 @@ func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *Sym
 	}
 }
 
+func (sa *SemanticAnalyser) lookupAttributeInClassHierarchy(className, attrName string) (string, bool) {
+	current := className
+	for current != "" {
+		classNode, exists := sa.inheritanceGraph.classes[current]
+		if !exists {
+			return "", false
+		}
+
+		if attr, found := classNode.attrs[attrName]; found {
+			return attr.attrType, true
+		}
+
+		current = classNode.parent
+	}
+
+	return "", false
+}
+
+func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *SymbolTable) string {
+	// Handle SELF_TYPE specially
+	if ne.Type.Value == "SELF_TYPE" {
+		return "SELF_TYPE" // Preserve SELF_TYPE in new expressions
+	}
+
+	// Check if the type exists
+	if _, ok := sa.inheritanceGraph.classes[ne.Type.Value]; !ok {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Undefined type %s in new expression",
+			ne.Type.Value))
+		return "Object" // Return Object as fallback
+	}
+
+	return ne.Type.Value
+}
+
 func (sa *SemanticAnalyser) getWhileExpressionType(wexpr *ast.WhileExpression, st *SymbolTable) string {
 	conditionType := sa.getExpressionType(wexpr.Condition, st)
 	if conditionType != "Bool" {
@@ -893,26 +1134,20 @@ func (sa *SemanticAnalyser) getBlockExpressionType(bexpr *ast.BlockExpression, s
 }
 
 func (sa *SemanticAnalyser) getIfExpressionType(ifexpr *ast.IfExpression, st *SymbolTable) string {
+	// Check condition type
 	conditionType := sa.getExpressionType(ifexpr.Condition, st)
 	if conditionType != "Bool" {
-		sa.errors = append(sa.errors, fmt.Sprintf("condition of if statement is of type %s, expected Bool", conditionType))
-		return "Object"
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Condition of if statement must be Bool, got %s",
+			conditionType))
 	}
 
-	constype := sa.getExpressionType(ifexpr.Consequence, st)
-	alttype := sa.getExpressionType(ifexpr.Alternative, st)
+	// Get types of both branches
+	thenType := sa.getExpressionType(ifexpr.Consequence, st)
+	elseType := sa.getExpressionType(ifexpr.Alternative, st)
 
-	// Just like the case expression, we need to find the least upper bound of the types
-	return sa.leastUpperBound(constype, alttype)
-}
-
-func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *SymbolTable) string {
-	// TODO: handle SELF_TYPE when implemented
-	if _, ok := sa.globalSymbolTable.Lookup(ne.Type.Value); !ok {
-		sa.errors = append(sa.errors, fmt.Sprintf("undefined type %s in new expression", ne.Type.Value))
-		return "Object"
-	}
-	return ne.Type.Value
+	// The result type is the least upper bound of the then and else types
+	return sa.leastUpperBound(thenType, elseType)
 }
 
 func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *SymbolTable) string {
@@ -970,14 +1205,51 @@ func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *Symb
 
 // TO VERIFY
 func (sa *SemanticAnalyser) GetAssignmentExpressionType(a *ast.Assignment, st *SymbolTable) string {
-	// TODO: look for object in symbol table walking the scope and then check type
 	entry, exists := st.Lookup(a.Name.Value)
 	if !exists {
-		sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s in assignment", a.Name.Value))
-		return "Object"
+		// Try to find in parent class attributes
+		found := false
+		attrType := ""
+
+		// Check if this attribute might be inherited
+		current := sa.currentClass
+		for current != "" {
+			classNode, exists := sa.inheritanceGraph.classes[current]
+			if !exists {
+				break
+			}
+
+			// Check if the attribute exists in this class
+			if attr, found := classNode.attrs[a.Name.Value]; found {
+				attrType = attr.attrType
+				found = true
+				break
+			}
+
+			// Move up to parent
+			current = classNode.parent
+		}
+
+		if !found {
+			sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s in assignment", a.Name.Value))
+			return "Object"
+		}
+
+		// Get the type of the expression being assigned
+		exprType := sa.getExpressionType(a.Value, st)
+
+		// Check type conformance
+		if !sa.isTypeConformant(exprType, attrType) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Type %s of assigned expression does not conform to attribute type %s",
+				exprType, attrType))
+			return attrType
+		}
+
+		return exprType
 	}
 
-	// Get the type of the expression being assigned
+	// Handle the case where the identifier was found in the symbol table
 	exprType := sa.getExpressionType(a.Value, st)
 
 	// Special handling for SELF_TYPE
@@ -1044,22 +1316,24 @@ func (sa *SemanticAnalyser) GetBinaryExpressionType(be *ast.BinaryExpression, st
 	}
 }
 
+// Improved type checking for case expressions
 func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *SymbolTable) string {
-	// First evaluate the type of the case expression and check for void
+	// First evaluate the type of the case expression
 	exprType := sa.getExpressionType(ce.Expr, st)
+
+	// void case expression is a runtime error in Cool, but we can report it here
 	if exprType == "void" {
-		sa.errors = append(sa.errors, "Case expression cannot be void")
-		return "Object"
+		sa.errors = append(sa.errors, "Case expression cannot be void (runtime error)")
 	}
 
-	// Keep track of types seen in branches to detect duplicates
+	// Track seen types to detect duplicates
 	seenTypes := make(map[string]bool)
 
 	// Collect types from all branches
 	branchTypes := make([]string, 0)
 
 	for _, branch := range ce.Branches {
-		// Check for duplicate types in branches
+		// Check for duplicate branch types (illegal in Cool)
 		if seenTypes[branch.Type.Value] {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Duplicate branch type %s in case expression",
@@ -1068,15 +1342,18 @@ func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *Sy
 		}
 		seenTypes[branch.Type.Value] = true
 
-		// Verify the branch type exists
-		if _, exists := sa.inheritanceGraph.classes[branch.Type.Value]; !exists {
-			sa.errors = append(sa.errors, fmt.Sprintf(
-				"Undefined type %s in case branch",
-				branch.Type.Value))
-			continue
+		// Verify the branch type exists in the class hierarchy
+		if branch.Type.Value != "SELF_TYPE" {
+			_, exists := sa.inheritanceGraph.classes[branch.Type.Value]
+			if !exists {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Undefined type %s in case branch",
+					branch.Type.Value))
+				continue
+			}
 		}
 
-		// Create new scope for the branch
+		// Create new scope for the branch with the pattern variable
 		branchST := NewSymbolTable(st)
 		branchST.AddEntry(branch.Pattern.Value, &SymbolEntry{
 			Type:  branch.Type.Value,
@@ -1090,7 +1367,7 @@ func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *Sy
 
 	// The type of a case expression is the least upper bound of all branch types
 	if len(branchTypes) == 0 {
-		return "Object"
+		return "Object" // Default if no valid branches (should not happen in valid programs)
 	}
 
 	// Find least upper bound of all branch types
@@ -1100,36 +1377,6 @@ func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *Sy
 	}
 
 	return resultType
-}
-
-func (sa *SemanticAnalyser) leastUpperBound(type1, type2 string) string {
-	// If either type is SELF_TYPE, use the current class
-	if type1 == "SELF_TYPE" {
-		type1 = sa.currentClass
-	}
-	if type2 == "SELF_TYPE" {
-		type2 = sa.currentClass
-	}
-
-	// If types are the same, that's the LUB
-	if type1 == type2 {
-		return type1
-	}
-
-	// Walk up the inheritance tree of both types until finding a common ancestor
-	ancestors1 := sa.getAncestors(type1)
-	ancestors2 := sa.getAncestors(type2)
-
-	// Find first common ancestor
-	for _, t1 := range ancestors1 {
-		for _, t2 := range ancestors2 {
-			if t1 == t2 {
-				return t1
-			}
-		}
-	}
-
-	return "Object"
 }
 
 // Helper function to get all ancestors of a type including itself
@@ -1159,6 +1406,11 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 		objectType = sa.currentClass // Implicit self
 	}
 
+	// Handle SELF_TYPE
+	if objectType == "SELF_TYPE" {
+		objectType = sa.currentClass
+	}
+
 	// Handle static dispatch
 	if de.StaticType != nil {
 		if !sa.isTypeConformant(objectType, de.StaticType.Value) {
@@ -1170,16 +1422,8 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 		objectType = de.StaticType.Value
 	}
 
-	// Look up the method in the class
-	classNode, exists := sa.inheritanceGraph.classes[objectType]
-	if !exists {
-		sa.errors = append(sa.errors, fmt.Sprintf(
-			"Dispatch on undefined type %s",
-			objectType))
-		return "Object"
-	}
-
-	method, exists := classNode.methods[de.Method.Value]
+	// Find method in class hierarchy
+	method, definingClass, exists := sa.findMethodInClassAndAncestors(objectType, de.Method.Value)
 	if !exists {
 		sa.errors = append(sa.errors, fmt.Sprintf(
 			"Undefined method %s in type %s",
@@ -1198,10 +1442,17 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 	// Type check arguments
 	for i, arg := range de.Arguments {
 		argType := sa.getExpressionType(arg, st)
-		if !sa.isTypeConformant(argType, method.formals[i].TypeDecl.Value) {
+		formalType := method.formals[i].TypeDecl.Value
+
+		// Handle SELF_TYPE in formal parameters
+		if formalType == "SELF_TYPE" {
+			formalType = definingClass
+		}
+
+		if !sa.isTypeConformant(argType, formalType) {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Argument %d of type %s does not conform to formal parameter type %s",
-				i+1, argType, method.formals[i].TypeDecl.Value))
+				i+1, argType, formalType))
 		}
 	}
 
@@ -1211,4 +1462,198 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 	}
 
 	return method.retType
+}
+
+// Fixed method to handle inheritance properly when looking up methods
+func (sa *SemanticAnalyser) findMethodInClassAndAncestors(className, methodName string) (*Method, string, bool) {
+	// Start with the current class
+	current := className
+
+	// Walk up the inheritance hierarchy
+	for current != "" {
+		classNode, exists := sa.inheritanceGraph.classes[current]
+		if !exists {
+			return nil, "", false // Class doesn't exist
+		}
+
+		// Check if the method exists in this class
+		if method, exists := classNode.methods[methodName]; exists {
+			return method, current, true // Found the method in this class
+		}
+
+		// Move up to the parent class
+		current = classNode.parent
+	}
+
+	// Method not found in this class or any ancestor
+	return nil, "", false
+}
+
+// Ensure inherited methods are properly collected and stored
+func (sa *SemanticAnalyser) collectInheritedMethods() {
+	// Process classes in topological order (from Object down)
+	var processClass func(className string)
+	processed := make(map[string]bool)
+
+	processClass = func(className string) {
+		// Skip if already processed
+		if processed[className] {
+			return
+		}
+
+		// Mark as processed
+		processed[className] = true
+
+		// Get the class node
+		classNode, exists := sa.inheritanceGraph.classes[className]
+		if !exists {
+			return
+		}
+
+		// Process parent class first
+		if classNode.parent != "" {
+			processClass(classNode.parent)
+
+			// Copy methods and attributes from parent
+			parentNode := sa.inheritanceGraph.classes[classNode.parent]
+
+			// Copy methods from parent
+			for methodName, method := range parentNode.methods {
+				// Don't override methods that are already defined in the class
+				if _, exists := classNode.methods[methodName]; !exists {
+					classNode.methods[methodName] = method
+					// Also add to features map
+					classNode.features[methodName] = method
+				}
+			}
+
+			// Copy attributes from parent
+			for attrName, attr := range parentNode.attrs {
+				// Don't override attributes that are already defined in the class
+				if _, exists := classNode.attrs[attrName]; !exists {
+					classNode.attrs[attrName] = attr
+					// Also add to features map
+					classNode.features[attrName] = attr
+				}
+			}
+		}
+	}
+
+	// Process all classes
+	for className := range sa.inheritanceGraph.classes {
+		processClass(className)
+	}
+}
+
+// Improved type conformance check that handles SELF_TYPE properly
+func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
+	// Handle some common cases first for clarity
+	if type1 == type2 {
+		return true
+	}
+
+	// Handle SELF_TYPE special cases
+	resolvedType1 := type1
+	resolvedType2 := type2
+
+	if type1 == "SELF_TYPE" {
+		resolvedType1 = sa.currentClass
+		// Special case: SELF_TYPE conforms to SELF_TYPE
+		if type2 == "SELF_TYPE" {
+			return true
+		}
+	}
+
+	if type2 == "SELF_TYPE" {
+		resolvedType2 = sa.currentClass
+	}
+
+	// Invalid types should not conform
+	if _, exists := sa.inheritanceGraph.classes[resolvedType1]; !exists {
+		return false
+	}
+	if _, exists := sa.inheritanceGraph.classes[resolvedType2]; !exists {
+		return false
+	}
+
+	// Check if type1 is a subtype of type2 by walking the inheritance graph
+	current := resolvedType1
+	for current != "" {
+		if current == resolvedType2 {
+			return true
+		}
+
+		node, exists := sa.inheritanceGraph.classes[current]
+		if !exists {
+			return false
+		}
+
+		current = node.parent
+	}
+
+	return false
+}
+
+// Improved least upper bound calculation that handles SELF_TYPE
+func (sa *SemanticAnalyser) leastUpperBound(type1, type2 string) string {
+	// Resolve SELF_TYPE to the current class
+	resolvedType1 := type1
+	resolvedType2 := type2
+
+	if type1 == "SELF_TYPE" {
+		resolvedType1 = sa.currentClass
+	}
+	if type2 == "SELF_TYPE" {
+		resolvedType2 = sa.currentClass
+	}
+
+	// If types are the same, that's the LUB
+	if resolvedType1 == resolvedType2 {
+		return resolvedType1
+	}
+
+	// Get ancestors of both types
+	ancestors1 := sa.getAncestors(resolvedType1)
+	ancestors2 := sa.getAncestors(resolvedType2)
+
+	// Find first common ancestor
+	for _, t1 := range ancestors1 {
+		for _, t2 := range ancestors2 {
+			if t1 == t2 {
+				return t1
+			}
+		}
+	}
+
+	// Object is the ultimate ancestor of all types
+	return "Object"
+}
+
+func (sa *SemanticAnalyser) ReportErrors() {
+	if len(sa.errors) == 0 {
+		fmt.Println("No semantic errors detected.")
+		return
+	}
+
+	fmt.Println("Semantic Errors:")
+	for _, err := range sa.errors {
+		fmt.Println(err)
+	}
+
+	fmt.Printf("Total: %d semantic errors found.\n", len(sa.errors))
+}
+
+// Helper function to check if dispatch expression is on self
+func (sa *SemanticAnalyser) isDispatchOnSelf(de *ast.DispatchExpression) bool {
+	// Implicit self dispatch
+	if de.Object == nil {
+		return true
+	}
+
+	// Explicit self
+	if id, ok := de.Object.(*ast.ObjectIdentifier); ok && id.Value == "self" {
+		return true
+	}
+
+	return false
 }

@@ -1,0 +1,23 @@
+class Main inherits IO {
+   sum(n : Int) : Int {
+      let sum : Int <- 0,
+          i : Int <- 1 in
+      {
+         while i <= n loop
+         {
+            sum <- sum + i;
+            i <- i + 1;
+         }
+         pool;
+         sum;
+      }
+   };
+
+   main() : Object {
+      {
+         out_string("Sum from 1 to 10: ");
+         out_int(sum(100));
+         out_string("\n");
+      }
+   };
+};

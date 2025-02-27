@@ -113,6 +113,10 @@ func SerializeExpression(exp ast.Expression) string {
 	case *ast.WhileExpression:
 		return fmt.Sprintf("while %s loop %s pool", SerializeExpression(node.Condition), SerializeExpression(node.Body))
 
+	case *ast.Assignment:
+		// we have token, name and value
+		return fmt.Sprintf("%s <- %s", node.Name.Value, SerializeExpression(node.Value))
+
 	default:
 		return fmt.Sprintf("unknown expression: %T", exp)
 	}

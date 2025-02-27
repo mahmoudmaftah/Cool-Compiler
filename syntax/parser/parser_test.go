@@ -44,6 +44,18 @@ func TestProgramParser(t *testing.T) {
 			expectedClasses: []string{"A", "B", "Main"},
 		},
 		{
+			input: `class Main inherits IO {
+				main() : Object {
+					if 5 < 10 then
+						out_string("Math works!\n")
+					else
+						out_string("Math is broken!\n")
+					fi
+				};
+			};`,
+			expectedClasses: []string{"Main"},
+		},
+		{
 			// Test case 1: Single empty class
 			input:           "class Main {};",
 			expectedClasses: []string{"Main"},
@@ -266,6 +278,16 @@ func TestBlockExpressions(t *testing.T) {
 			// Simple block with single expression
 			input:    "{ 1; }",
 			expected: "{ 1 }",
+		},
+		{
+			input: `{
+			if 5 < 10 then
+				out_string("Math works!\n")
+			else
+				out_string("Math is broken!\n")
+			fi
+		};`,
+			expected: "{ if (5 < 10) then out_string(\"Math works!\n\") else out_string(\"Math is broken!\n\") fi }",
 		},
 		{
 			// Block with multiple simple expressions
@@ -689,7 +711,7 @@ func TestExpressionParssing(t *testing.T) {
 		{"x.bar(1, 2)", "x.bar(1, 2)"},
 		{"while true loop {1;} pool", "while true loop { 1 } pool"},
 		{"while true loop 1 pool", "while true loop 1 pool"},
-		{"x <- 5", "(x <- 5)"},
+		{"x <- 5", "x <- 5"},
 		{"if true then 1 else 2 fi", "if true then 1 else 2 fi"},
 		{"if true then 1 else if false then 2 else 3 fi fi", "if true then 1 else if false then 2 else 3 fi fi"},
 		// test factorial
@@ -837,9 +859,9 @@ func TestLetExpressions(t *testing.T) {
 		// {
 		// 	// Let within a block
 		// 	input: `{
-        //         let x: Int <- 1 in x + 1;
-        //         let y: Int <- 2 in y + 2
-        //     }`,
+		//         let x: Int <- 1 in x + 1;
+		//         let y: Int <- 2 in y + 2
+		//     }`,
 		// 	expected: "{ let x:Int<-1 in (x + 1); let y:Int<-2 in (y + 2) }",
 		// },
 		{

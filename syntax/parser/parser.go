@@ -97,7 +97,6 @@ func New(l *lexer.Lexer) *Parser {
 	}
 
 	// Register prefix operators
-
 	p.registerPrefix(lexer.INT_CONST, p.parseIntegerLiteral)
 	p.registerPrefix(lexer.STR_CONST, p.parseStringLiteral)
 	p.registerPrefix(lexer.BOOL_CONST, p.parseBooleanLiteral)
@@ -121,9 +120,11 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.EQ, p.parseBinaryExpression)
 	p.registerInfix(lexer.LT, p.parseBinaryExpression)
 	p.registerInfix(lexer.LE, p.parseBinaryExpression)
-	p.registerInfix(lexer.ASSIGN, p.parseBinaryExpression)
 	p.registerInfix(lexer.DOT, p.parseDispatchExpression)
 	p.registerInfix(lexer.AT, p.parseDispatchExpression)
+
+	// CRITICAL FIX: Use proper assignment expression parsing
+	p.registerInfix(lexer.ASSIGN, p.parseAssignmentExpression)
 
 	// Read two tokens, so curToken and peekToken are both set
 	p.nextToken()
@@ -225,7 +226,7 @@ func (p *Parser) ParseClass() *ast.Class {
 		}
 		c.Parent = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 		p.nextToken()
-	} 
+	}
 
 	if !p.curTokenIs(lexer.LBRACE) {
 		p.errors = append(p.errors,
@@ -261,7 +262,7 @@ func (p *Parser) ParseClass() *ast.Class {
 	return c
 }
 
-// TODO : PARSE FEATURE (can be method ot attribute).
+// parseFeature can be method or attribute
 func (p *Parser) parseFeature() ast.Feature {
 	if p.peekTokenIs(lexer.LPAREN) {
 		return p.parseMethod()
@@ -269,7 +270,7 @@ func (p *Parser) parseFeature() ast.Feature {
 	return p.parseAttribute()
 }
 
-// TODO : PARSE ATTRIBUTE (Will have a name, a type and an optional init expression).
+// parseAttribute will have a name, a type and an optional init expression
 func (p *Parser) parseAttribute() *ast.Attribute {
 	attr := &ast.Attribute{Token: p.curToken}
 
@@ -293,8 +294,6 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 		attr.Init = p.parseExpression(LOWEST)
 	}
 
-	// fmt.Println("AT ATTRIBUTE PARSER", p.curToken.Literal)
-
 	p.nextToken()
 	// check if the current token is a SEMI
 	if !p.curTokenIs(lexer.SEMI) {
@@ -309,8 +308,7 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 	return attr
 }
 
-// TODO : PARSE METHOD (Will have a set of formals and a body).
-
+// parseMethod will have a set of formals and a body
 func (p *Parser) parseMethod() *ast.Method {
 	method := &ast.Method{Token: p.curToken}
 
@@ -367,13 +365,9 @@ func (p *Parser) parseMethod() *ast.Method {
 		return nil
 	}
 
-	// fmt.Println("AT METHOD PARSER", p.curToken.Literal)
-
 	// Parse method body as a block expression
 	method.Body = p.parseBlockExpression()
 
-	// fmt.Println("MAHMOUD", p.curToken.Literal)
-	// fmt.Println("MAHMOUD", p.peekToken.Literal)
 	// read the rbrace
 	if !p.curTokenIs(lexer.RBRACE) {
 		p.errors = append(p.errors, fmt.Sprintf(
@@ -516,6 +510,35 @@ func (p *Parser) parseExpression(precedence Precedence) ast.Expression {
 	return leftExp
 }
 
+// CRITICAL NEW FUNCTION: Handle assignment expressions properly
+func (p *Parser) parseAssignmentExpression(left ast.Expression) ast.Expression {
+	// Check if left is an ObjectIdentifier
+	identifier, ok := left.(*ast.ObjectIdentifier)
+	if !ok {
+		p.errors = append(p.errors, fmt.Sprintf(
+			"Left side of assignment must be an identifier at line %d col %d",
+			p.curToken.Line, p.curToken.Column))
+		return nil
+	}
+
+	// Create an Assignment node
+	expr := &ast.Assignment{
+		Token: p.curToken,
+		Name:  identifier,
+	}
+
+	// Save the precedence
+	precedence := p.curPrecedence()
+
+	// Move to the expression after the <- token
+	p.nextToken()
+
+	// Parse the value expression
+	expr.Value = p.parseExpression(precedence)
+
+	return expr
+}
+
 func (p *Parser) parseIfExpression() ast.Expression {
 	expression := &ast.IfExpression{Token: p.curToken}
 
@@ -544,34 +567,25 @@ func (p *Parser) parseIfExpression() ast.Expression {
 }
 
 func (p *Parser) parseWhileExpression() ast.Expression {
-	// fmt.Println("PARSING WHILE")
 	expression := &ast.WhileExpression{Token: p.curToken}
 
-	p.nextToken()
+	p.nextToken() // Move past 'while'
 	expression.Condition = p.parseExpression(LOWEST)
 
 	if !p.expectAndPeek(lexer.LOOP) {
 		return nil
 	}
-	// then skip the loop token
-	p.nextToken()
 
-	// now we are at the start of the loop body
-	// depending on the token, we can parse the body
-	// if it is a block, we parse it as a block
-	// if it is a single expression, we parse it as an expression
+	p.nextToken() // Move past 'loop'
 
+	// Parse the body expression
 	if p.curTokenIs(lexer.LBRACE) {
 		expression.Body = p.parseBlockExpression()
-		// jump to the next token
-		p.nextToken()
 	} else {
 		expression.Body = p.parseExpression(LOWEST)
-		// jump to the next token
-		p.nextToken()
 	}
 
-	if !p.curTokenIs(lexer.POOL) {
+	if !p.expectAndPeek(lexer.POOL) {
 		p.errors = append(p.errors, fmt.Sprintf(
 			"Expected 'pool' at line %d col %d, got %s",
 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
@@ -582,9 +596,6 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 }
 
 func (p *Parser) parseBlockExpression() ast.Expression {
-
-	// fmt.Println("PARSING BLOCK")
-
 	block := &ast.BlockExpression{
 		Token:       p.curToken,
 		Expressions: []ast.Expression{},
@@ -599,19 +610,15 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 	}
 	p.nextToken() // Move past the opening brace
 
-	// fmt.Println("In block parser", p.curToken.Literal)
-
 	// Parse expressions until we hit closing brace
 	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
 		expr := p.parseExpression(LOWEST)
-		// fmt.Println("Parse expresssssion", p.curToken.Literal)
-
 		if expr == nil {
 			return nil
 		}
 
 		block.Expressions = append(block.Expressions, expr)
-		// fmt.Println("In block parser", p.curToken.Literal)
+
 		// Require semicolon after each expression except the last one
 		if !p.peekTokenIs(lexer.RBRACE) {
 			if !p.expectAndPeek(lexer.SEMI) {
@@ -619,12 +626,9 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 			}
 			p.nextToken() // Move past semicolon
 		} else {
-			p.nextToken()
+			p.nextToken() // Move to closing brace
 		}
-
 	}
-
-	// fmt.Println("At the end parser", p.curToken.Literal)
 
 	// Check for closing brace
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -640,7 +644,6 @@ func (p *Parser) parseLetExpression() ast.Expression {
 	expr := &ast.LetExpression{Token: p.curToken}
 	expr.Bindings = []*ast.LetBinding{}
 
-	// fmt.Println("============AT LET PARSER", p.curToken.Literal)
 	for {
 		if !p.expectAndPeek(lexer.OBJECTID) {
 			return nil
@@ -663,7 +666,7 @@ func (p *Parser) parseLetExpression() ast.Expression {
 			p.nextToken() // move to <-
 			p.nextToken() // move to first token of init expression
 
-			// Parse initialization with higher precedence than comma
+			// Parse initialization expression
 			binding.Init = p.parseExpression(LOWEST)
 			if binding.Init == nil {
 				return nil
@@ -683,14 +686,13 @@ func (p *Parser) parseLetExpression() ast.Expression {
 	}
 
 	p.nextToken() // move past IN
-	// fmt.Println("Moved past IN", p.curToken.Literal)
-	// if current token is '{', parse block expression
+
+	// Parse the 'in' expression
 	if p.curTokenIs(lexer.LBRACE) {
 		expr.In = p.parseBlockExpression()
 	} else {
 		expr.In = p.parseExpression(LOWEST)
 	}
-	// fmt.Println("Moved past block", p.curToken.Literal)
 
 	return expr
 }
@@ -754,8 +756,7 @@ func (p *Parser) parseDispatchExpression(object ast.Expression) ast.Expression {
 	}
 
 	// Check for static dispatch (@Type)
-	if p.peekTokenIs(lexer.AT) {
-		p.nextToken() // consume the '.'
+	if p.curTokenIs(lexer.AT) {
 		p.nextToken() // move to the type
 
 		if !p.curTokenIs(lexer.TYPEID) {
