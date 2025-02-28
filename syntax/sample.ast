@@ -1,50 +1,155 @@
 Program
   Class: Main inherits IO
-    Method: fibonacci
-      Formals:
-        n: Int
-      Return Type: Int
-      Body:
-        Block
-          If
-            Condition:
-              Binary: <=
-                Identifier: n
-                Int: 1
-            Then:
-              Int: 1
-            Else:
-              Binary: +
-                Dispatch:
-                  Method: fibonacci
-                  Arguments:
-                    Binary: -
-                      Identifier: n
-                      Int: 1
-                Dispatch:
-                  Method: fibonacci
-                  Arguments:
-                    Binary: -
-                      Identifier: n
-                      Int: 2
     Method: main
       Formals:
       Return Type: Object
       Body:
         Block
-          Block
-            Dispatch:
-              Method: out_string
-              Arguments:
-                String: "Fibonacci(8): "
-            Dispatch:
-              Method: out_int
-              Arguments:
+          Let
+            Binding: arr: Array[Int]
+              Init:
+                Unknown expression type: *ast.ArrayExpression
+            Binding: n: Int
+              Init:
+                Int: 8
+            Binding: i: Int
+              Init:
+                Int: 0
+            Binding: j: Int
+              Init:
+                Int: 0
+            Binding: temp: Int
+            Binding: swapped: Bool
+            In:
+              Block
+                Assignment: arr[0]
+                  Int: 64
+                Assignment: arr[1]
+                  Int: 25
+                Assignment: arr[2]
+                  Int: 12
+                Assignment: arr[3]
+                  Int: 22
+                Assignment: arr[4]
+                  Int: 11
+                Assignment: arr[5]
+                  Int: 1
+                Assignment: arr[6]
+                  Int: 90
+                Assignment: arr[7]
+                  Int: 46
                 Dispatch:
-                  Method: fibonacci
+                  Method: out_string
                   Arguments:
-                    Int: 8
-            Dispatch:
-              Method: out_string
-              Arguments:
-                String: "\n"
+                    String: "Before sorting:\nArray: "
+                Assignment: i
+                  Int: 0
+                While
+                  Condition:
+                    Binary: <
+                      Identifier: i
+                      Identifier: n
+                  Body:
+                    Block
+                      Dispatch:
+                        Method: out_int
+                        Arguments:
+                          Unknown expression type: *ast.ArrayAccessExpression
+                      Dispatch:
+                        Method: out_string
+                        Arguments:
+                          String: " "
+                      Assignment: i
+                        Binary: +
+                          Identifier: i
+                          Int: 1
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"
+                Assignment: i
+                  Int: 0
+                While
+                  Condition:
+                    Binary: <
+                      Identifier: i
+                      Identifier: n
+                  Body:
+                    Block
+                      Assignment: swapped
+                        Bool: false
+                      Assignment: j
+                        Int: 0
+                      While
+                        Condition:
+                          Binary: <
+                            Identifier: j
+                            Binary: -
+                              Binary: -
+                                Identifier: n
+                                Identifier: i
+                              Int: 1
+                        Body:
+                          Block
+                            If
+                              Condition:
+                                Binary: <
+                                  Unknown expression type: *ast.ArrayAccessExpression
+                                  Unknown expression type: *ast.ArrayAccessExpression
+                              Then:
+                                Block
+                                  Assignment: temp
+                                    Unknown expression type: *ast.ArrayAccessExpression
+                                  Assignment: arr[j]
+                                    Unknown expression type: *ast.ArrayAccessExpression
+                                  Assignment: arr[(j + 1)]
+                                    Identifier: temp
+                                  Assignment: swapped
+                                    Bool: true
+                              Else:
+                                Bool: false
+                            Assignment: j
+                              Binary: +
+                                Identifier: j
+                                Int: 1
+                      If
+                        Condition:
+                          Unary: not
+                            Identifier: swapped
+                        Then:
+                          Assignment: i
+                            Identifier: n
+                        Else:
+                          Assignment: i
+                            Binary: +
+                              Identifier: i
+                              Int: 1
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "After sorting:\nArray: "
+                Assignment: i
+                  Int: 0
+                While
+                  Condition:
+                    Binary: <
+                      Identifier: i
+                      Identifier: n
+                  Body:
+                    Block
+                      Dispatch:
+                        Method: out_int
+                        Arguments:
+                          Unknown expression type: *ast.ArrayAccessExpression
+                      Dispatch:
+                        Method: out_string
+                        Arguments:
+                          String: " "
+                      Assignment: i
+                        Binary: +
+                          Identifier: i
+                          Int: 1
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"

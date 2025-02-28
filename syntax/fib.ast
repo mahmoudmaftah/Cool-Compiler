@@ -1,0 +1,37 @@
+Program
+  Class: Main inherits IO
+    Method: main
+      Formals:
+      Return Type: Object
+      Body:
+        Block
+          Let
+            Binding: num: Int
+            Binding: result: Int
+            In:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Enter a number: "
+                Assignment: num
+                  Dispatch:
+                    Method: in_int
+                Assignment: result
+                  Binary: +
+                    Identifier: num
+                    Int: 1
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Method: out_string
+                          Arguments:
+                            String: "Result is: "
+                      Method: out_int
+                      Arguments:
+                        Identifier: result
+                  Method: out_string
+                  Arguments:
+                    String: "\n"

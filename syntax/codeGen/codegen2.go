@@ -15,7 +15,6 @@ import (
 )
 
 // CodeGenerator maintains the state needed during code generation
-// CodeGenerator maintains the state needed during code generation
 type CodeGenerator struct {
 	// LLVM Module being generated
 	Module *ir.Module
@@ -2223,57 +2222,6 @@ func (cg *CodeGenerator) implementRuntimeTypeFunctions() {
 	// This is a placeholder implementation
 	nonNullBlock.NewRet(constant.NewInt(types.I32, 0))
 }
-
-// When generating a NewExpression, handle Array types specially
-// func (cg *CodeGenerator) generateNewExpression(newExpr *ast.NewExpression) (value.Value, error) {
-// 	className := newExpr.Type.Value
-
-// 	// Check if it's an array type with a special syntax (Array[Type])
-// 	if strings.HasPrefix(className, "Array[") && strings.HasSuffix(className, "]") {
-// 		// This is a parameterized array type creation without explicit size
-// 		// Default to size 0 (empty array)
-// 		typeTag := int8(0) // Default to Object
-
-// 		// Extract element type
-// 		elemTypeName := className[6 : len(className)-1]
-
-// 		// Determine type tag based on element type
-// 		switch elemTypeName {
-// 		case "Int":
-// 			typeTag = 1
-// 		case "Bool":
-// 			typeTag = 2
-// 		case "String":
-// 			typeTag = 3
-// 		default:
-// 			// Object or class type
-// 			typeTag = 0
-// 		}
-
-// 		// Determine element size
-// 		var elemSize value.Value
-// 		switch elemTypeName {
-// 		case "Int":
-// 			elemSize = constant.NewInt(types.I32, 4)
-// 		case "Bool":
-// 			elemSize = constant.NewInt(types.I32, 1)
-// 		default:
-// 			// String, Object or class types (all pointers)
-// 			elemSize = constant.NewInt(types.I32, 8)
-// 		}
-
-// 		// Create empty array with size 0
-// 		return cg.currentBlock.NewCall(
-// 			cg.runtimeFuncs["Array_new"],
-// 			elemSize,
-// 			constant.NewInt(types.I32, 0), // Default size 0
-// 			constant.NewInt(types.I8, int64(typeTag)),
-// 		), nil
-// 	}
-
-// 	// For regular class types, use the standard object creation
-// 	return cg.generateNewObject(cg.currentBlock, className), nil
-// }
 
 func (cg *CodeGenerator) generateNewExpression(newExpr *ast.NewExpression) (value.Value, error) {
 	className := newExpr.Type.Value

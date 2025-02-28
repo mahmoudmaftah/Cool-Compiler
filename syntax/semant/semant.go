@@ -1595,64 +1595,7 @@ func (sa *SemanticAnalyser) isDispatchOnSelf(de *ast.DispatchExpression) bool {
 	return false
 }
 
-// func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable) {
-// 	methodSt := NewSymbolTable(st)
 
-// 	// We will first check for duplicate formal parameters
-// 	seenParams := make(map[string]bool)
-// 	for _, formal := range method.Formals {
-// 		if seenParams[formal.Name.Value] {
-// 			sa.errors = append(sa.errors, fmt.Sprintf(
-// 				"Formal parameter %s is multiply defined in method %s from class %s",
-// 				formal.Name.Value, method.Name.Value, sa.currentClass))
-// 			continue
-// 		}
-// 		seenParams[formal.Name.Value] = true
-
-// 		// Check formal parameter type exists (handle array types)
-// 		if !sa.typeExists(formal.TypeDecl.Value) {
-// 			sa.errors = append(sa.errors, fmt.Sprintf(
-// 				"Formal parameter %s has undefined type %s in method %s from class %s",
-// 				formal.Name.Value, formal.TypeDecl.Value, method.Name.Value, sa.currentClass))
-// 			continue
-// 		}
-
-// 		// Add formal to method scope
-// 		methodSt.AddEntry(formal.Name.Value, &SymbolEntry{
-// 			Type:  formal.TypeDecl.Value,
-// 			Token: formal.Token,
-// 		})
-// 	}
-
-// 	// Check if return type exists (handle array types)
-// 	if !sa.typeExists(method.TypeDecl.Value) {
-// 		sa.errors = append(sa.errors, fmt.Sprintf(
-// 			"Method %s has undefined return type %s",
-// 			method.Name.Value, method.TypeDecl.Value))
-// 		return
-// 	}
-
-// 	// Type check method body
-// 	bodyType := sa.getExpressionType(method.Body, methodSt)
-
-// 	// Handle SELF_TYPE in return type
-// 	expectedType := method.TypeDecl.Value
-// 	if expectedType == "SELF_TYPE" {
-// 		expectedType = sa.currentClass
-// 	}
-
-// 	// Fix for methods returning SELF_TYPE
-// 	if method.TypeDecl.Value == "SELF_TYPE" && (bodyType == sa.currentClass || bodyType == "SELF_TYPE") {
-// 		// This is valid - the body returns self or SELF_TYPE
-// 		return
-// 	}
-
-// 	if !sa.isTypeConformant(bodyType, expectedType) {
-// 		sa.errors = append(sa.errors, fmt.Sprintf(
-// 			"Method %s body type %s does not conform to declared return type %s",
-// 			method.Name.Value, bodyType, method.TypeDecl.Value))
-// 	}
-// }
 
 func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable) {
 	// Save the original class and method contexts
