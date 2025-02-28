@@ -1,0 +1,13 @@
+class Main inherits IO {
+   fibonacci(n : Int) : Int {
+      if n <= 1 then 1 else fibonacci(n-1) + fibonacci(n-2) fi
+   };
+
+   main() : Object {
+      {
+         out_string("Fibonacci(8): ");
+         out_int(fibonacci(8));
+         out_string("\n");
+      }
+   };
+};

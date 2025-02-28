@@ -1,155 +1,407 @@
 Program
-  Class: Main inherits IO
-    Method: main
+  Class: Shape
+    Attribute: name : String
+      Init:
+        String: "Generic Shape"
+    Method: init
       Formals:
+        n: String
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            Assignment: name
+              Identifier: n
+            Identifier: self
+    Method: getName
+      Formals:
+      Return Type: String
+      Body:
+        Block
+          Identifier: name
+    Method: area
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          Int: 0
+  Class: Circle inherits Shape
+    Attribute: radius : Int
+      Init:
+        Int: 0
+    Method: init
+      Formals:
+        n: String
+        r: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            Assignment: name
+              Identifier: n
+            Assignment: radius
+              Identifier: r
+            Identifier: self
+    Method: area
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          Binary: *
+            Binary: *
+              Int: 3
+              Identifier: radius
+            Identifier: radius
+  Class: Rectangle inherits Shape
+    Attribute: width : Int
+      Init:
+        Int: 0
+    Attribute: height : Int
+      Init:
+        Int: 0
+    Method: init
+      Formals:
+        n: String
+        w: Int
+        h: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            Assignment: name
+              Identifier: n
+            Assignment: width
+              Identifier: w
+            Assignment: height
+              Identifier: h
+            Identifier: self
+    Method: area
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          Binary: *
+            Identifier: width
+            Identifier: height
+  Class: ShapeManager
+    Method: testIsVoid
+      Formals:
+        shape: Shape
       Return Type: Object
       Body:
         Block
-          Let
-            Binding: arr: Array[Int]
-              Init:
-                Unknown expression type: *ast.ArrayExpression
-            Binding: n: Int
-              Init:
-                Int: 8
-            Binding: i: Int
-              Init:
+          Block
+            If
+              Condition:
+                IsVoid
+                  Identifier: shape
+              Then:
+                Dispatch:
+                  Object:
+                    New: IO
+                  Method: out_string
+                  Arguments:
+                    String: "Shape is void!\n"
+              Else:
+                Dispatch:
+                  Object:
+                    New: IO
+                  Method: out_string
+                  Arguments:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            String: "Shape is not void: "
+                          Method: concat
+                          Arguments:
+                            Dispatch:
+                              Object:
+                                Identifier: shape
+                              Method: getName
+                      Method: concat
+                      Arguments:
+                        String: "\n"
+            Let
+              Binding: emptyShape: Shape
+              In:
+                If
+                  Condition:
+                    IsVoid
+                      Identifier: emptyShape
+                  Then:
+                    Dispatch:
+                      Object:
+                        New: IO
+                      Method: out_string
+                      Arguments:
+                        String: "Empty shape is void as expected\n"
+                  Else:
+                    Dispatch:
+                      Object:
+                        New: IO
+                      Method: out_string
+                      Arguments:
+                        String: "ERROR: Empty shape is NOT void!\n"
+    Method: identifyShape
+      Formals:
+        shape: Shape
+      Return Type: Object
+      Body:
+        Block
+          Block
+            If
+              Condition:
+                IsVoid
+                  Identifier: shape
+              Then:
+                Block
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      String: "Cannot identify a void shape\n"
+                  Identifier: self
+              Else:
                 Int: 0
-            Binding: j: Int
-              Init:
+            Case
+              Expression:
+                Identifier: shape
+              Branches:
+                Branch s: Shape =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      String: "It's a generic Shape\n"
+                Branch c: Circle =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      Dispatch:
+                        Object:
+                          Dispatch:
+                            Object:
+                              String: "It's a Circle with area: "
+                            Method: concat
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      New: Int
+                                    Method: set
+                                    Arguments:
+                                      Dispatch:
+                                        Object:
+                                          Identifier: c
+                                        Method: area
+                                Method: toString
+                        Method: concat
+                        Arguments:
+                          String: "\n"
+                Branch r: Rectangle =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      Dispatch:
+                        Object:
+                          Dispatch:
+                            Object:
+                              String: "It's a Rectangle with area: "
+                            Method: concat
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      New: Int
+                                    Method: set
+                                    Arguments:
+                                      Dispatch:
+                                        Object:
+                                          Identifier: r
+                                        Method: area
+                                Method: toString
+                        Method: concat
+                        Arguments:
+                          String: "\n"
+                Branch o: Object =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      String: "It's some other type of object\n"
+    Method: advancedCaseTest
+      Formals:
+        obj: Object
+      Return Type: Object
+      Body:
+        Block
+          Block
+            If
+              Condition:
+                IsVoid
+                  Identifier: obj
+              Then:
+                Block
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      String: "Object is void, showing default behavior\n"
+                  Assignment: obj
+                    Dispatch:
+                      Object:
+                        New: Shape
+                      Method: init
+                      Arguments:
+                        String: "Default"
+              Else:
                 Int: 0
-            Binding: temp: Int
-            Binding: swapped: Bool
-            In:
-              Block
-                Assignment: arr[0]
-                  Int: 64
-                Assignment: arr[1]
-                  Int: 25
-                Assignment: arr[2]
-                  Int: 12
-                Assignment: arr[3]
-                  Int: 22
-                Assignment: arr[4]
-                  Int: 11
-                Assignment: arr[5]
-                  Int: 1
-                Assignment: arr[6]
-                  Int: 90
-                Assignment: arr[7]
-                  Int: 46
-                Dispatch:
-                  Method: out_string
-                  Arguments:
-                    String: "Before sorting:\nArray: "
-                Assignment: i
-                  Int: 0
-                While
-                  Condition:
-                    Binary: <
-                      Identifier: i
-                      Identifier: n
-                  Body:
-                    Block
+            Case
+              Expression:
+                Identifier: obj
+              Branches:
+                Branch s: Shape =>
+                  Block
+                    Dispatch:
+                      Object:
+                        New: IO
+                      Method: out_string
+                      Arguments:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                String: "Shape found: "
+                              Method: concat
+                              Arguments:
+                                Dispatch:
+                                  Object:
+                                    Identifier: s
+                                  Method: getName
+                          Method: concat
+                          Arguments:
+                            String: "\n"
+                    Case
+                      Expression:
+                        Identifier: s
+                      Branches:
+                        Branch c: Circle =>
+                          Dispatch:
+                            Object:
+                              New: IO
+                            Method: out_string
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      String: "Circle with name: "
+                                    Method: concat
+                                    Arguments:
+                                      Dispatch:
+                                        Object:
+                                          Identifier: c
+                                        Method: getName
+                                Method: concat
+                                Arguments:
+                                  String: "\n"
+                        Branch r: Rectangle =>
+                          Dispatch:
+                            Object:
+                              New: IO
+                            Method: out_string
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      String: "Rectangle with name: "
+                                    Method: concat
+                                    Arguments:
+                                      Dispatch:
+                                        Object:
+                                          Identifier: r
+                                        Method: getName
+                                Method: concat
+                                Arguments:
+                                  String: "\n"
+                        Branch x: Shape =>
+                          Dispatch:
+                            Object:
+                              New: IO
+                            Method: out_string
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      String: "Other shape type with name: "
+                                    Method: concat
+                                    Arguments:
+                                      Dispatch:
+                                        Object:
+                                          Identifier: x
+                                        Method: getName
+                                Method: concat
+                                Arguments:
+                                  String: "\n"
+                Branch i: Int =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
                       Dispatch:
-                        Method: out_int
+                        Object:
+                          Dispatch:
+                            Object:
+                              String: "Found an integer: "
+                            Method: concat
+                            Arguments:
+                              Dispatch:
+                                Object:
+                                  Dispatch:
+                                    Object:
+                                      New: Int
+                                    Method: set
+                                    Arguments:
+                                      Identifier: i
+                                Method: toString
+                        Method: concat
                         Arguments:
-                          Unknown expression type: *ast.ArrayAccessExpression
+                          String: "\n"
+                Branch s: String =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
                       Dispatch:
-                        Method: out_string
+                        Object:
+                          Dispatch:
+                            Object:
+                              String: "Found a string: "
+                            Method: concat
+                            Arguments:
+                              Identifier: s
+                        Method: concat
                         Arguments:
-                          String: " "
-                      Assignment: i
-                        Binary: +
-                          Identifier: i
-                          Int: 1
-                Dispatch:
-                  Method: out_string
-                  Arguments:
-                    String: "\n"
-                Assignment: i
-                  Int: 0
-                While
-                  Condition:
-                    Binary: <
-                      Identifier: i
-                      Identifier: n
-                  Body:
-                    Block
-                      Assignment: swapped
-                        Bool: false
-                      Assignment: j
-                        Int: 0
-                      While
-                        Condition:
-                          Binary: <
-                            Identifier: j
-                            Binary: -
-                              Binary: -
-                                Identifier: n
-                                Identifier: i
-                              Int: 1
-                        Body:
-                          Block
-                            If
-                              Condition:
-                                Binary: <
-                                  Unknown expression type: *ast.ArrayAccessExpression
-                                  Unknown expression type: *ast.ArrayAccessExpression
-                              Then:
-                                Block
-                                  Assignment: temp
-                                    Unknown expression type: *ast.ArrayAccessExpression
-                                  Assignment: arr[j]
-                                    Unknown expression type: *ast.ArrayAccessExpression
-                                  Assignment: arr[(j + 1)]
-                                    Identifier: temp
-                                  Assignment: swapped
-                                    Bool: true
-                              Else:
-                                Bool: false
-                            Assignment: j
-                              Binary: +
-                                Identifier: j
-                                Int: 1
-                      If
-                        Condition:
-                          Unary: not
-                            Identifier: swapped
-                        Then:
-                          Assignment: i
-                            Identifier: n
-                        Else:
-                          Assignment: i
-                            Binary: +
-                              Identifier: i
-                              Int: 1
-                Dispatch:
-                  Method: out_string
-                  Arguments:
-                    String: "After sorting:\nArray: "
-                Assignment: i
-                  Int: 0
-                While
-                  Condition:
-                    Binary: <
-                      Identifier: i
-                      Identifier: n
-                  Body:
-                    Block
-                      Dispatch:
-                        Method: out_int
-                        Arguments:
-                          Unknown expression type: *ast.ArrayAccessExpression
-                      Dispatch:
-                        Method: out_string
-                        Arguments:
-                          String: " "
-                      Assignment: i
-                        Binary: +
-                          Identifier: i
-                          Int: 1
-                Dispatch:
-                  Method: out_string
-                  Arguments:
-                    String: "\n"
+                          String: "\n"
+                Branch o: Object =>
+                  Dispatch:
+                    Object:
+                      New: IO
+                    Method: out_string
+                    Arguments:
+                      String: "Found some other object type\n"

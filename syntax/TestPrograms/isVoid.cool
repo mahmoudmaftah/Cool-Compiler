@@ -1,0 +1,27 @@
+(*
+ * Simple test for isvoid expression
+ *)
+class Main inherits IO {
+    main() : Object {
+        let 
+            initialized : Object <- new Object,
+            uninitialized : Object
+        in {
+            out_string("Testing isvoid with initialized object: ");
+            if isvoid initialized then
+                out_string("is void (ERROR)\n")
+            else
+                out_string("is not void (CORRECT)\n")
+            fi;
+            
+            out_string("Testing isvoid with uninitialized object: ");
+            if isvoid uninitialized then
+                out_string("is void (CORRECT)\n")
+            else
+                out_string("is not void (ERROR)\n")
+            fi;
+            
+            out_string("isvoid test completed\n");
+        }
+    };
+};

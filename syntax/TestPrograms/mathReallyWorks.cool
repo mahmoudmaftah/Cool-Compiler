@@ -6,7 +6,7 @@ class Main inherits IO {
          out_string("Math is broken!\n")
       fi;
 
-      if 50 < 10 then
+      if 5*5 = 25 then
          out_string("Math works!\n")
       else
          out_string("Math is broken!\n")
