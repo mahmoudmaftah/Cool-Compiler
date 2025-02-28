@@ -1,4 +1,4 @@
-class Main {
+class Main inherits IO{
   main() : Object {
     let arr : Array[Int] <- new Array[Int](10) in {
       arr[0] <- 5;

@@ -4,6 +4,7 @@ import (
 	"cool-compiler/ast"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/llir/llvm/ir"
@@ -13,6 +14,7 @@ import (
 	"github.com/llir/llvm/ir/value"
 )
 
+// CodeGenerator maintains the state needed during code generation
 // CodeGenerator maintains the state needed during code generation
 type CodeGenerator struct {
 	// LLVM Module being generated
@@ -57,6 +59,7 @@ type CodeGenerator struct {
 
 	// Array extension support
 	arrayElementTypes map[string]types.Type // Maps array class types to their element types
+	arrayTypeCache    map[string]types.Type // Cache for already created array types
 
 	// Optimization level
 	optimizationLevel int
@@ -82,6 +85,7 @@ func New() *CodeGenerator {
 		cFuncs:            make(map[string]*ir.Func),
 		typeIDMap:         make(map[string]int64),
 		arrayElementTypes: make(map[string]types.Type),
+		arrayTypeCache:    make(map[string]types.Type), // Initialize array type cache
 		errors:            []string{},
 	}
 
@@ -90,10 +94,6 @@ func New() *CodeGenerator {
 	cg.boolType = types.I1
 	cg.stringType = types.NewPointer(types.I8) // Strings are char* in LLVM
 	cg.voidType = types.Void
-
-	// IMPORTANT: Do NOT set the target triple explicitly
-	// Let LLVM/Clang determine the appropriate target for the current system
-	// cg.Module.TargetTriple = "x86_64-unknown-linux-gnu" // Remove this line if it exists
 
 	// Add data layout information that's generic enough for most systems
 	cg.Module.DataLayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
@@ -105,6 +105,7 @@ func New() *CodeGenerator {
 	cg.initializeBasicClasses()
 	cg.initializeTypeSystem()
 
+	// Enable array support
 	cg.setupArrayExtension()
 
 	return cg
@@ -460,7 +461,7 @@ func (cg *CodeGenerator) fillClassType(className string, class *ast.Class) error
 // createMethodDeclarations creates LLVM function declarations for all methods
 func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 	// First pass: create vtable types for each class (forward declaration)
-	
+
 	for className, _ := range cg.classTypes {
 		cg.vtables[className] = types.NewStruct()
 		cg.Module.NewTypeDef(className+"_vtable", cg.vtables[className])
@@ -735,6 +736,12 @@ func (cg *CodeGenerator) generateDispatch(dispatch *ast.DispatchExpression) (val
 	// Find method to be called
 	methodName := dispatch.Method.Value
 
+	// Special case for Array.size() method
+	if staticClass == "Array" && methodName == "size" {
+		// Direct call to Array_size function
+		return cg.currentBlock.NewCall(cg.methods["Array"]["size"], objPtr), nil
+	}
+
 	// Check if we're doing a static dispatch (@Type.method)
 	var methodDefiningClass string
 	if dispatch.StaticType != nil {
@@ -750,12 +757,7 @@ func (cg *CodeGenerator) generateDispatch(dispatch *ast.DispatchExpression) (val
 		return nil, fmt.Errorf("method %s not found in class %s or any ancestor", methodName, methodDefiningClass)
 	}
 
-	// SIMPLIFIED APPROACH: Do the null check in the current block
-	// Only create new blocks for error handling if needed
-	var callResult value.Value
-
-	// Start with the non-null path directly in the current block
-	// Cast objPtr to the correct type expected by the method
+	// Cast objPtr to the correct type expected by the method if needed
 	expectedType := methodFunc.Params[0].Type()
 	castedObj := objPtr
 	if objPtr.Type() != expectedType {
@@ -775,10 +777,7 @@ func (cg *CodeGenerator) generateDispatch(dispatch *ast.DispatchExpression) (val
 	}
 
 	// Call the method directly in the current block
-	callResult = cg.currentBlock.NewCall(methodFunc, args...)
-
-	// Return the call result
-	return callResult, nil
+	return cg.currentBlock.NewCall(methodFunc, args...), nil
 }
 
 // Also update the if expression function to use a similar approach
@@ -1143,6 +1142,29 @@ func (cg *CodeGenerator) getDefaultValue(typ types.Type) value.Value {
 
 // mapType maps a Cool type name to an LLVM type
 func (cg *CodeGenerator) mapType(typeName string) (types.Type, error) {
+	// Check if it's an array type
+	if strings.HasPrefix(typeName, "Array[") && strings.HasSuffix(typeName, "]") {
+		// Check if we've already created this array type
+		if cachedType, exists := cg.arrayTypeCache[typeName]; exists {
+			return types.NewPointer(cachedType), nil
+		}
+
+		// Get element type and create array type
+		_, _, err := cg.getArrayElementType(typeName)
+		if err != nil {
+			return nil, err
+		}
+
+		// Use the base Array type
+		if arrayType, exists := cg.classTypes["Array"]; exists {
+			// Cache the type for future use
+			cg.arrayTypeCache[typeName] = arrayType
+			return types.NewPointer(arrayType), nil
+		}
+
+		return nil, fmt.Errorf("Array base type not defined")
+	}
+
 	// Handle SELF_TYPE contextually based on current class
 	if typeName == "SELF_TYPE" {
 		if cg.currentClass == "" {
@@ -1218,63 +1240,6 @@ func (cg *CodeGenerator) generateExpression(expr ast.Expression) (value.Value, e
 	}
 }
 
-func (cg *CodeGenerator) generateArrayExpression(expr *ast.ArrayExpression) (value.Value, error) {
-	// Extract array type
-	arrayTypeStr := expr.Type.Value
-
-	// Get element type and type tag
-	elemType, typeTag, err := cg.getArrayElementType(arrayTypeStr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Generate size expression
-	sizeValue, err := cg.generateExpression(expr.Size)
-	if err != nil {
-		return nil, fmt.Errorf("error generating array size: %v", err)
-	}
-
-	// Determine element size
-	var elemSize value.Value
-	switch elemType {
-	case cg.intType: // Int
-		elemSize = constant.NewInt(types.I32, 4)
-	case cg.boolType: // Bool
-		elemSize = constant.NewInt(types.I32, 1)
-	default: // String, Object or class types (all pointers)
-		elemSize = constant.NewInt(types.I32, 8)
-	}
-
-	// Call array initialization function
-	return cg.currentBlock.NewCall(
-		cg.runtimeFuncs["Array_new"],
-		elemSize,
-		sizeValue,
-		constant.NewInt(types.I8, int64(typeTag)),
-	), nil
-}
-
-func (cg *CodeGenerator) generateArrayAccessExpression(expr *ast.ArrayAccessExpression) (value.Value, error) {
-	// Generate array expression
-	arrayPtr, err := cg.generateExpression(expr.Array)
-	if err != nil {
-		return nil, fmt.Errorf("error generating array: %v", err)
-	}
-
-	// Generate index expression
-	indexValue, err := cg.generateExpression(expr.Index)
-	if err != nil {
-		return nil, fmt.Errorf("error generating index: %v", err)
-	}
-
-	// Call get element function
-	return cg.currentBlock.NewCall(
-		cg.runtimeFuncs["Array_get_element"],
-		arrayPtr,
-		indexValue,
-	), nil
-}
-
 // generateIntegerLiteral generates LLVM IR for an integer literal
 func (cg *CodeGenerator) generateIntegerLiteral(intLit *ast.IntegerLiteral) (value.Value, error) {
 	// Create integer constant
@@ -1318,7 +1283,50 @@ func (cg *CodeGenerator) generateBooleanLiteral(boolLit *ast.BooleanLiteral) (va
 
 // generateAssignment generates LLVM IR for an assignment
 // Fix for your generateAssignment function
+// Adapting the assignment expression for array elements
 func (cg *CodeGenerator) generateAssignment(assign *ast.Assignment) (value.Value, error) {
+	// Check if we're assigning to an array element
+	if strings.Contains(assign.Name.Value, "[") && strings.Contains(assign.Name.Value, "]") {
+		// Parse the array name and index from the string
+		// This is a simple approach - in a real compiler this would be structured differently
+		parts := strings.Split(assign.Name.Value, "[")
+		if len(parts) != 2 || !strings.HasSuffix(parts[1], "]") {
+			return nil, fmt.Errorf("invalid array access syntax: %s", assign.Name.Value)
+		}
+
+		arrayName := parts[0]
+		indexStr := parts[1][:len(parts[1])-1] // Remove trailing "]"
+
+		// Get the array variable
+		arrayVar, exists := cg.variables[arrayName]
+		if !exists {
+			return nil, fmt.Errorf("undefined array: %s", arrayName)
+		}
+
+		// Parse the index (assuming it's a simple integer literal for this implementation)
+		index, err := strconv.Atoi(indexStr)
+		if err != nil {
+			return nil, fmt.Errorf("non-constant index not supported in this implementation: %s", indexStr)
+		}
+
+		// Generate the right-hand-side expression
+		rhsValue, err := cg.generateExpression(assign.Value)
+		if err != nil {
+			return nil, fmt.Errorf("error generating right-hand side: %v", err)
+		}
+
+		// Call set element function
+		cg.currentBlock.NewCall(
+			cg.runtimeFuncs["Array_set_element"],
+			arrayVar,
+			constant.NewInt(types.I32, int64(index)),
+			cg.currentBlock.NewBitCast(rhsValue, types.NewPointer(types.I8)),
+		)
+
+		return rhsValue, nil
+	}
+
+	// Regular assignment handling
 	varName := assign.Name.Value
 
 	// Generate the right-hand-side expression
@@ -1631,7 +1639,6 @@ func (cg *CodeGenerator) generateWhileExpression(whileExpr *ast.WhileExpression)
 
 // Placeholder stubs for remaining expression types
 func (cg *CodeGenerator) generateLetExpression(let *ast.LetExpression) (value.Value, error) {
-	// Simplified implementation - should handle multiple bindings
 	// Create block for let body
 	letBlock := cg.currentFunc.NewBlock("let")
 
@@ -1651,7 +1658,19 @@ func (cg *CodeGenerator) generateLetExpression(let *ast.LetExpression) (value.Va
 	// Process bindings
 	for _, binding := range let.Bindings {
 		bindingName := binding.Identifier.Value
-		bindingType, err := cg.mapType(binding.Type.Value)
+
+		// Handle array types specially
+		var bindingType types.Type
+		var err error
+
+		if cg.isArrayType(binding.Type.Value) {
+			// For array types, use pointer to Array struct
+			bindingType, err = cg.mapType(binding.Type.Value)
+		} else {
+			// For normal types
+			bindingType, err = cg.mapType(binding.Type.Value)
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("error mapping type for let binding %s: %v", bindingName, err)
 		}
@@ -1665,13 +1684,31 @@ func (cg *CodeGenerator) generateLetExpression(let *ast.LetExpression) (value.Va
 			if err != nil {
 				return nil, fmt.Errorf("error generating let init: %v", err)
 			}
+
+			// For array types, may need to cast
+			if cg.isArrayType(binding.Type.Value) && initValue.Type() != bindingType {
+				initValue = cg.currentBlock.NewBitCast(initValue, bindingType)
+			}
+
 			cg.currentBlock.NewStore(initValue, varAlloca)
 		} else {
 			// Default initialization
-			cg.currentBlock.NewStore(constant.NewZeroInitializer(bindingType), varAlloca)
+			if cg.isArrayType(binding.Type.Value) {
+				// For array types, check if it's a pointer type first
+				if ptrType, ok := bindingType.(*types.PointerType); ok {
+					// Create null/void value of the correct pointer type
+					cg.currentBlock.NewStore(constant.NewNull(ptrType), varAlloca)
+				} else {
+					// Fallback to zero initializer if not a pointer (shouldn't happen)
+					cg.currentBlock.NewStore(constant.NewZeroInitializer(bindingType), varAlloca)
+				}
+			} else {
+				// Default initialization for other types
+				cg.currentBlock.NewStore(constant.NewZeroInitializer(bindingType), varAlloca)
+			}
 		}
 
-		// Add to variables map
+		// Add to variables map - store the alloca for local variables
 		cg.variables[bindingName] = varAlloca
 	}
 
@@ -1976,8 +2013,54 @@ func (cg *CodeGenerator) implementRuntimeTypeFunctions() {
 	nonNullBlock.NewRet(constant.NewInt(types.I32, 0))
 }
 
+// When generating a NewExpression, handle Array types specially
 func (cg *CodeGenerator) generateNewExpression(newExpr *ast.NewExpression) (value.Value, error) {
 	className := newExpr.Type.Value
+
+	// Check if it's an array type with a special syntax (Array[Type])
+	if strings.HasPrefix(className, "Array[") && strings.HasSuffix(className, "]") {
+		// This is a parameterized array type creation without explicit size
+		// Default to size 0 (empty array)
+		typeTag := int8(0) // Default to Object
+
+		// Extract element type
+		elemTypeName := className[6 : len(className)-1]
+
+		// Determine type tag based on element type
+		switch elemTypeName {
+		case "Int":
+			typeTag = 1
+		case "Bool":
+			typeTag = 2
+		case "String":
+			typeTag = 3
+		default:
+			// Object or class type
+			typeTag = 0
+		}
+
+		// Determine element size
+		var elemSize value.Value
+		switch elemTypeName {
+		case "Int":
+			elemSize = constant.NewInt(types.I32, 4)
+		case "Bool":
+			elemSize = constant.NewInt(types.I32, 1)
+		default:
+			// String, Object or class types (all pointers)
+			elemSize = constant.NewInt(types.I32, 8)
+		}
+
+		// Create empty array with size 0
+		return cg.currentBlock.NewCall(
+			cg.runtimeFuncs["Array_new"],
+			elemSize,
+			constant.NewInt(types.I32, 0), // Default size 0
+			constant.NewInt(types.I8, int64(typeTag)),
+		), nil
+	}
+
+	// For regular class types, use the standard object creation
 	return cg.generateNewObject(cg.currentBlock, className), nil
 }
 
@@ -2195,4 +2278,67 @@ func (cg *CodeGenerator) generateObjectIdentifier(obj *ast.ObjectIdentifier) (va
 	}
 
 	return nil, fmt.Errorf("undefined identifier: %s", varName)
+}
+
+func (cg *CodeGenerator) generateArrayExpression(expr *ast.ArrayExpression) (value.Value, error) {
+	// Extract array type
+	arrayTypeStr := expr.Type.Value
+
+	// Get element type and type tag
+	elemType, typeTag, err := cg.getArrayElementType(arrayTypeStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate size expression
+	sizeValue, err := cg.generateExpression(expr.Size)
+	if err != nil {
+		return nil, fmt.Errorf("error generating array size: %v", err)
+	}
+
+	// Determine element size (in bytes)
+	var elemSize value.Value
+	switch elemType {
+	case cg.intType: // Int (4 bytes)
+		elemSize = constant.NewInt(types.I32, 4)
+	case cg.boolType: // Bool (1 byte)
+		elemSize = constant.NewInt(types.I32, 1)
+	default: // String, Object or class types (all pointers - 8 bytes)
+		elemSize = constant.NewInt(types.I32, 8)
+	}
+
+	// Call array initialization function
+	return cg.currentBlock.NewCall(
+		cg.runtimeFuncs["Array_new"],
+		elemSize,
+		sizeValue,
+		constant.NewInt(types.I8, int64(typeTag)),
+	), nil
+}
+
+// Added generateArrayAccessExpression implementation
+func (cg *CodeGenerator) generateArrayAccessExpression(expr *ast.ArrayAccessExpression) (value.Value, error) {
+	// Generate array expression
+	arrayPtr, err := cg.generateExpression(expr.Array)
+	if err != nil {
+		return nil, fmt.Errorf("error generating array: %v", err)
+	}
+
+	// Generate index expression
+	indexValue, err := cg.generateExpression(expr.Index)
+	if err != nil {
+		return nil, fmt.Errorf("error generating index: %v", err)
+	}
+
+	// Call get element function
+	return cg.currentBlock.NewCall(
+		cg.runtimeFuncs["Array_get_element"],
+		arrayPtr,
+		indexValue,
+	), nil
+}
+
+// isArrayType checks if a type string represents an array type
+func (cg *CodeGenerator) isArrayType(typeName string) bool {
+	return strings.HasPrefix(typeName, "Array[") && strings.HasSuffix(typeName, "]")
 }
