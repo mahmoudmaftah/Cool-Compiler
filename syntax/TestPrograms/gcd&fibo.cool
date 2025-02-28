@@ -1,0 +1,21 @@
+class Main inherits IO {
+   factorial(n : Int) : Int {
+      if n <= 1 then 1 else n * factorial(n-1) fi
+   };
+   
+   gcd(a : Int, b : Int) : Int {
+      if b = 0 then a else gcd(b, a - (a/b)*b) fi
+   };
+
+   main() : Object {
+      {
+         out_string("Factorial(5): ");
+         out_int(factorial(5));
+         out_string("\n");
+         
+         out_string("GCD(48, 18): ");
+         out_int(gcd(48, 18));
+         out_string("\n");
+      }
+   };
+};

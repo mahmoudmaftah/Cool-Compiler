@@ -257,22 +257,19 @@ func (cg *CodeGenerator) createSimpleArrayVTable() {
 	cg.vtableGlobals["Array"] = vtableGlobal
 }
 
-
-
-
 func (cg *CodeGenerator) getArrayElementType(arrayTypeStr string) (types.Type, int8, error) {
 	// Parse Array[Type] syntax
 	if !strings.HasPrefix(arrayTypeStr, "Array[") || !strings.HasSuffix(arrayTypeStr, "]") {
 		return nil, 0, fmt.Errorf("invalid array type: %s", arrayTypeStr)
 	}
-	
+
 	// Extract element type name
 	elemTypeName := arrayTypeStr[6 : len(arrayTypeStr)-1]
-	
+
 	// Determine element type and type tag
 	var elemType types.Type
 	var typeTag int8
-	
+
 	switch elemTypeName {
 	case "Int":
 		elemType = types.I32
@@ -292,16 +289,15 @@ func (cg *CodeGenerator) getArrayElementType(arrayTypeStr string) (types.Type, i
 			return nil, 0, fmt.Errorf("unknown element type: %s", elemTypeName)
 		}
 	}
-	
+
 	// Store for later use
 	if cg.arrayElementTypes == nil {
 		cg.arrayElementTypes = make(map[string]types.Type)
 	}
 	cg.arrayElementTypes[arrayTypeStr] = elemType
-	
+
 	return elemType, typeTag, nil
 }
-
 
 func (cg *CodeGenerator) createArrayAccessFunctions() {
 	// Check if the functions already exist

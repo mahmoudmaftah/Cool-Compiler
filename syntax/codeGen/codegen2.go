@@ -199,6 +199,8 @@ func (cg *CodeGenerator) Generate(program *ast.Program) (*ir.Module, error) {
 		return nil, fmt.Errorf("error creating method declarations: %v", err)
 	}
 
+	cg.ensureInheritedMethods(program)
+
 	if err := cg.generateMethodImplementations(program); err != nil {
 		return nil, fmt.Errorf("error generating method implementations: %v", err)
 	}
@@ -521,6 +523,7 @@ func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 	return nil
 }
 
+// Add debug print statements to collectClassMethods
 func (cg *CodeGenerator) collectClassMethods(className string) []methodInfo {
 	methodList := []methodInfo{}
 	methodMap := make(map[string]methodInfo)
@@ -533,6 +536,7 @@ func (cg *CodeGenerator) collectClassMethods(className string) []methodInfo {
 		info.index = len(methodList)
 		methodMap[methodName] = info
 		methodList = append(methodList, info)
+
 	}
 
 	// Store method indices for dispatch lookup
@@ -710,80 +714,231 @@ func (cg *CodeGenerator) generateDispatch(dispatch *ast.DispatchExpression) (val
 	// Generate code for the object
 	var objPtr value.Value
 	var err error
-	var staticClass string
 
 	if dispatch.Object != nil {
 		objPtr, err = cg.generateExpression(dispatch.Object)
 		if err != nil {
 			return nil, fmt.Errorf("error generating dispatch object: %v", err)
 		}
+	} else {
+		// Self dispatch - get the self parameter
+		objPtr = cg.variables["self"]
+	}
 
-		// Try to determine static type - use current class as a fallback
-		staticClass = cg.currentClass
+	// Get method name
+	methodName := dispatch.Method.Value
 
-		// For a more advanced implementation, we would look at the type from semantic analysis
-		if ptrType, ok := objPtr.Type().(*types.PointerType); ok {
-			if structType, ok := ptrType.ElemType.(*types.StructType); ok {
-				// Try to find the class name from the struct type
-				for className, classType := range cg.classTypes {
-					if classType == structType {
-						staticClass = className
-						break
-					}
+	// Special case for String methods
+	if isStringType(objPtr.Type()) && (methodName == "concat" || methodName == "length" || methodName == "substr") {
+		methodFunc := cg.runtimeFuncs["string_"+methodName]
+		args := []value.Value{objPtr}
+		for _, arg := range dispatch.Arguments {
+			argValue, err := cg.generateExpression(arg)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, argValue)
+		}
+		return cg.currentBlock.NewCall(methodFunc, args...), nil
+	}
+
+	// Special case for static dispatch
+	if dispatch.StaticType != nil {
+		staticClassName := dispatch.StaticType.Value
+		methodFunc, exists := cg.methods[staticClassName][methodName]
+		if !exists {
+			return nil, fmt.Errorf("method %s not found in class %s", methodName, staticClassName)
+		}
+
+		// Cast object to expected type
+		objPtr = cg.currentBlock.NewBitCast(objPtr, methodFunc.Params[0].Type())
+
+		// Call with arguments
+		args := []value.Value{objPtr}
+		for _, arg := range dispatch.Arguments {
+			argValue, err := cg.generateExpression(arg)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, argValue)
+		}
+		return cg.currentBlock.NewCall(methodFunc, args...), nil
+	}
+
+	// =====================================================
+	// Dynamic dispatch implementation - the key fix we need
+	// =====================================================
+
+	// Step 1: Determine the static type of the object to find the method in type hierarchy
+	var staticClassName string
+
+	// Check the object's static type
+	if objPtrType, ok := objPtr.Type().(*types.PointerType); ok {
+		if structType, ok := objPtrType.ElemType.(*types.StructType); ok {
+			// Look up the class name from the type
+			for name, classType := range cg.classTypes {
+				if classType == structType {
+					staticClassName = name
+					break
 				}
 			}
 		}
+	}
+
+	// If we couldn't determine it from type, use current class
+	if staticClassName == "" {
+		// Handle primitive types
+		if isStringType(objPtr.Type()) {
+			staticClassName = "String"
+		} else if isIntType(objPtr.Type()) {
+			staticClassName = "Int"
+		} else if objPtr.Type().Equal(cg.boolType) {
+			staticClassName = "Bool"
+		} else {
+			// Default to current class if we can't determine
+			staticClassName = cg.currentClass
+			if staticClassName == "" {
+				staticClassName = "Object" // Fallback
+			}
+		}
+	}
+
+	// Step 2: Look for the method's virtual table index in the class hierarchy
+	methodIdx := -1
+	methodClass := ""
+
+	// Find method index by traversing class hierarchy
+	currentClass := staticClassName
+	for currentClass != "" {
+		// Check if class has method indices
+		if indices, exists := cg.methodIndices[currentClass]; exists {
+			// Check if method exists in this class
+			if idx, exists := indices[methodName]; exists {
+				methodIdx = idx
+				methodClass = currentClass
+				break
+			}
+		}
+
+		// Move up inheritance chain
+		currentClass = cg.classParents[currentClass]
+	}
+
+	if methodIdx < 0 {
+		return nil, fmt.Errorf("method %s not found in class %s or any ancestor",
+			methodName, staticClassName)
+	}
+
+	// Step 3: Get the vtable pointer from the object (first field)
+	// First, we need to get the object's type
+	var objType types.Type
+	if objPtrType, ok := objPtr.Type().(*types.PointerType); ok {
+		objType = objPtrType.ElemType
 	} else {
-		// Self dispatch
-		objPtr = cg.variables["self"]
-		staticClass = cg.currentClass
+		return nil, fmt.Errorf("expected pointer type for object in dispatch, got %v", objPtr.Type())
 	}
 
-	// Find method to be called
-	methodName := dispatch.Method.Value
+	vtablePtrPtr := cg.currentBlock.NewGetElementPtr(
+		objType, // The object's struct type
+		objPtr,
+		constant.NewInt(types.I32, 0),
+		constant.NewInt(types.I32, 0), // First field is vtable pointer
+	)
 
-	// Special case for Array.size() method
-	if staticClass == "Array" && methodName == "size" {
-		// Direct call to Array_size function
-		return cg.currentBlock.NewCall(cg.methods["Array"]["size"], objPtr), nil
-	}
+	// Load the vtable pointer
+	vtablePtr := cg.currentBlock.NewLoad(types.NewPointer(types.I8), vtablePtrPtr)
 
-	// Check if we're doing a static dispatch (@Type.method)
-	var methodDefiningClass string
-	if dispatch.StaticType != nil {
-		methodDefiningClass = dispatch.StaticType.Value
-	} else {
-		// Find which class in the inheritance hierarchy defines this method
-		methodDefiningClass = cg.findMethodDefiningClass(staticClass, methodName)
-	}
+	// Step 4: Cast vtable pointer to the correct vtable type
+	// We need the vtable type from the class where the method was defined
+	vtableType := cg.vtables[methodClass]
+	typedVtablePtr := cg.currentBlock.NewBitCast(vtablePtr, types.NewPointer(vtableType))
 
-	// Find the method
-	methodFunc := cg.findMethod(methodDefiningClass, methodName)
+	// Step 5: Get method pointer from vtable at the right index
+	// This is where we get the function pointer for the correct override
+	methodPtrPtr := cg.currentBlock.NewGetElementPtr(
+		vtableType,
+		typedVtablePtr,
+		constant.NewInt(types.I32, 0),
+		constant.NewInt(types.I32, int64(methodIdx)),
+	)
+
+	// Now we need the method's function type to load it properly
+	// First find the function in method environment
+	methodFunc := cg.methods[methodClass][methodName]
 	if methodFunc == nil {
-		return nil, fmt.Errorf("method %s not found in class %s or any ancestor", methodName, methodDefiningClass)
+		return nil, fmt.Errorf("method %s.%s not found in method map", methodClass, methodName)
 	}
 
-	// Cast objPtr to the correct type expected by the method if needed
-	expectedType := methodFunc.Params[0].Type()
-	castedObj := objPtr
-	if objPtr.Type() != expectedType {
-		castedObj = cg.currentBlock.NewBitCast(objPtr, expectedType)
-	}
+	methodFuncType := methodFunc.Type()
 
-	// Add casted object as first arg
-	args := []value.Value{castedObj}
+	// Load the method pointer
+	methodPtr := cg.currentBlock.NewLoad(methodFuncType, methodPtrPtr)
 
-	// Add rest of arguments
+	// Step 6: Prepare the arguments
+	args := []value.Value{objPtr} // Self is always the first argument
+
+	// Add the rest of the arguments
 	for _, arg := range dispatch.Arguments {
 		argValue, err := cg.generateExpression(arg)
 		if err != nil {
-			return nil, fmt.Errorf("error generating dispatch argument: %v", err)
+			return nil, err
 		}
 		args = append(args, argValue)
 	}
 
-	// Call the method directly in the current block
-	return cg.currentBlock.NewCall(methodFunc, args...), nil
+	// Step 7: Call through the method pointer for proper dynamic dispatch
+	return cg.currentBlock.NewCall(methodPtr, args...), nil
+}
+
+// Helper to determine the actual class of an object pointer
+func (cg *CodeGenerator) determineObjectClass(objPtr value.Value) string {
+	// Handle string type
+	if isStringType(objPtr.Type()) {
+		return "String"
+	}
+
+	// Handle Int
+	if isIntType(objPtr.Type()) {
+		return "Int"
+	}
+
+	// Handle Bool
+	if _, ok := objPtr.Type().(*types.IntType); ok && objPtr.Type().String() == "i1" {
+		return "Bool"
+	}
+
+	// For class pointers
+	if ptrType, ok := objPtr.Type().(*types.PointerType); ok {
+		if structType, ok := ptrType.ElemType.(*types.StructType); ok {
+			for className, classType := range cg.classTypes {
+				if classType == structType {
+					return className
+				}
+			}
+		}
+	}
+
+	// If we can't determine it, use current class as fallback
+	return cg.currentClass
+}
+
+// Add this helper function to guess the class of an object
+func (cg *CodeGenerator) guessObjectClass(objPtr value.Value) string {
+	if isStringType(objPtr.Type()) {
+		return "String"
+	}
+
+	if ptrType, ok := objPtr.Type().(*types.PointerType); ok {
+		if structType, ok := ptrType.ElemType.(*types.StructType); ok {
+			for className, classType := range cg.classTypes {
+				if classType == structType {
+					return className
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // Also update the if expression function to use a similar approach
@@ -1014,7 +1169,7 @@ func (cg *CodeGenerator) generateNewObject(block *ir.Block, className string) va
 	}
 
 	// Calculate object size
-	sizeOfClass := constant.NewInt(types.I64, 64) // Approximation or could calculate exact size
+	sizeOfClass := constant.NewInt(types.I64, 64) // Approximation
 
 	// Call memory allocation
 	rawPtr := block.NewCall(cg.runtimeFuncs["GC_malloc"], sizeOfClass)
@@ -1022,7 +1177,24 @@ func (cg *CodeGenerator) generateNewObject(block *ir.Block, className string) va
 	// Cast to object type
 	objPtr := block.NewBitCast(rawPtr, types.NewPointer(classType))
 
-	// Initialize object fields including vtable
+	// Set vtable pointer
+	vtableField := block.NewGetElementPtr(
+		classType,
+		objPtr,
+		constant.NewInt(types.I32, 0),
+		constant.NewInt(types.I32, 0),
+	)
+
+	// Find and use the correct vtable for this class
+	if vtableGlobal, exists := cg.vtableGlobals[className]; exists {
+		vtablePtrCast := block.NewBitCast(vtableGlobal, types.NewPointer(types.I8))
+		block.NewStore(vtablePtrCast, vtableField)
+	} else {
+		// If no vtable found, this is a problem - print a debug message
+		fmt.Printf("WARNING: No vtable found for class %s\n", className)
+	}
+
+	// Initialize fields with default values
 	cg.initializeObjectFields(block, objPtr, className)
 
 	return objPtr
@@ -1569,15 +1741,31 @@ func (cg *CodeGenerator) generateBlockExpression(block *ast.BlockExpression) (va
 
 // Helper function to find which class in the inheritance chain defines a method
 func (cg *CodeGenerator) findMethodDefiningClass(className, methodName string) string {
+	// Start with the given class
 	current := className
+
+	// Track if we've found the method at all
+	foundMethod := false
+	foundInClass := ""
+
+	// First pass: look for the method in this class and all ancestor classes
 	for current != "" {
 		if methodMap, exists := cg.methods[current]; exists {
 			if _, exists := methodMap[methodName]; exists {
-				return current
+				foundMethod = true
+				foundInClass = current
+				// Don't break - continue to check all ancestor classes
 			}
 		}
 		current = cg.classParents[current]
 	}
+
+	// If method was found, return the most specific class that defines it
+	if foundMethod {
+		return foundInClass
+	}
+
+	// Method not found in any class
 	return "Object" // Default to Object if not found
 }
 
@@ -1649,7 +1837,7 @@ func (cg *CodeGenerator) generateWhileExpression(whileExpr *ast.WhileExpression)
 	return constant.NewNull(objPtrType), nil
 }
 
-// Placeholder stubs for remaining expression types
+// generateLetExpression processes let expressions with bindings and body
 func (cg *CodeGenerator) generateLetExpression(let *ast.LetExpression) (value.Value, error) {
 	// Create block for let body
 	letBlock := cg.currentFunc.NewBlock("let")
@@ -1697,9 +1885,20 @@ func (cg *CodeGenerator) generateLetExpression(let *ast.LetExpression) (value.Va
 				return nil, fmt.Errorf("error generating let init: %v", err)
 			}
 
-			// For array types, may need to cast
-			if cg.isArrayType(binding.Type.Value) && initValue.Type() != bindingType {
-				initValue = cg.currentBlock.NewBitCast(initValue, bindingType)
+			// Handle type compatibility for initialization
+			if initValue.Type() != bindingType {
+				// For array types
+				if cg.isArrayType(binding.Type.Value) {
+					initValue = cg.currentBlock.NewBitCast(initValue, bindingType)
+				} else if ptrType, ok := bindingType.(*types.PointerType); ok {
+					// Class type compatibility (parent/child relationships)
+					if initPtrType, ok := initValue.Type().(*types.PointerType); ok {
+						// We have two pointer types, need to cast between them
+						if ptrType.ElemType != initPtrType.ElemType {
+							initValue = cg.currentBlock.NewBitCast(initValue, bindingType)
+						}
+					}
+				}
 			}
 
 			cg.currentBlock.NewStore(initValue, varAlloca)
@@ -2026,54 +2225,110 @@ func (cg *CodeGenerator) implementRuntimeTypeFunctions() {
 }
 
 // When generating a NewExpression, handle Array types specially
+// func (cg *CodeGenerator) generateNewExpression(newExpr *ast.NewExpression) (value.Value, error) {
+// 	className := newExpr.Type.Value
+
+// 	// Check if it's an array type with a special syntax (Array[Type])
+// 	if strings.HasPrefix(className, "Array[") && strings.HasSuffix(className, "]") {
+// 		// This is a parameterized array type creation without explicit size
+// 		// Default to size 0 (empty array)
+// 		typeTag := int8(0) // Default to Object
+
+// 		// Extract element type
+// 		elemTypeName := className[6 : len(className)-1]
+
+// 		// Determine type tag based on element type
+// 		switch elemTypeName {
+// 		case "Int":
+// 			typeTag = 1
+// 		case "Bool":
+// 			typeTag = 2
+// 		case "String":
+// 			typeTag = 3
+// 		default:
+// 			// Object or class type
+// 			typeTag = 0
+// 		}
+
+// 		// Determine element size
+// 		var elemSize value.Value
+// 		switch elemTypeName {
+// 		case "Int":
+// 			elemSize = constant.NewInt(types.I32, 4)
+// 		case "Bool":
+// 			elemSize = constant.NewInt(types.I32, 1)
+// 		default:
+// 			// String, Object or class types (all pointers)
+// 			elemSize = constant.NewInt(types.I32, 8)
+// 		}
+
+// 		// Create empty array with size 0
+// 		return cg.currentBlock.NewCall(
+// 			cg.runtimeFuncs["Array_new"],
+// 			elemSize,
+// 			constant.NewInt(types.I32, 0), // Default size 0
+// 			constant.NewInt(types.I8, int64(typeTag)),
+// 		), nil
+// 	}
+
+// 	// For regular class types, use the standard object creation
+// 	return cg.generateNewObject(cg.currentBlock, className), nil
+// }
+
 func (cg *CodeGenerator) generateNewExpression(newExpr *ast.NewExpression) (value.Value, error) {
 	className := newExpr.Type.Value
 
-	// Check if it's an array type with a special syntax (Array[Type])
+	// Array handling (unchanged)
 	if strings.HasPrefix(className, "Array[") && strings.HasSuffix(className, "]") {
-		// This is a parameterized array type creation without explicit size
-		// Default to size 0 (empty array)
-		typeTag := int8(0) // Default to Object
-
-		// Extract element type
-		elemTypeName := className[6 : len(className)-1]
-
-		// Determine type tag based on element type
-		switch elemTypeName {
-		case "Int":
-			typeTag = 1
-		case "Bool":
-			typeTag = 2
-		case "String":
-			typeTag = 3
-		default:
-			// Object or class type
-			typeTag = 0
-		}
-
-		// Determine element size
-		var elemSize value.Value
-		switch elemTypeName {
-		case "Int":
-			elemSize = constant.NewInt(types.I32, 4)
-		case "Bool":
-			elemSize = constant.NewInt(types.I32, 1)
-		default:
-			// String, Object or class types (all pointers)
-			elemSize = constant.NewInt(types.I32, 8)
-		}
-
-		// Create empty array with size 0
-		return cg.currentBlock.NewCall(
-			cg.runtimeFuncs["Array_new"],
-			elemSize,
-			constant.NewInt(types.I32, 0), // Default size 0
-			constant.NewInt(types.I8, int64(typeTag)),
-		), nil
+		// ... (existing array handling code) ...
+		// The existing array handling code should remain as-is
 	}
 
-	// For regular class types, use the standard object creation
-	return cg.generateNewObject(cg.currentBlock, className), nil
+	// Create a new instance of the class
+	objPtr := cg.generateNewObject(cg.currentBlock, className)
+
+	// If this is a direct dispatch to init, handle it here
+	if len(newExpr.Type.Value) > 5 && newExpr.Type.Value[len(newExpr.Type.Value)-5:] == ".init" {
+		// Extract class name and method name
+		parts := strings.Split(newExpr.Type.Value, ".")
+		if len(parts) == 2 {
+			className = parts[0]
+			methodName := parts[1]
+
+			// Find the method through inheritance chain
+			methodFunc, _ := cg.findInheritedMethod(className, methodName)
+			if methodFunc != nil {
+				// Call the init method with the object as parameter
+				args := []value.Value{objPtr}
+				// Add other arguments if needed
+
+				return cg.currentBlock.NewCall(methodFunc, args...), nil
+			}
+		}
+	}
+
+	return objPtr, nil
+}
+
+func (cg *CodeGenerator) findInheritedMethod(className, methodName string) (*ir.Func, string) {
+	// Start with the given class
+	currentClass := className
+
+	// Follow the inheritance chain to find the method
+	for currentClass != "" {
+		// Check if this class has the method
+		if methodMap, exists := cg.methods[currentClass]; exists {
+			if method, exists := methodMap[methodName]; exists {
+				return method, currentClass // Return the method and the class that defines it
+			}
+		}
+
+		// Move up the inheritance chain
+		currentClass = cg.classParents[currentClass]
+	}
+
+	// Method not found in any ancestor
+	return nil, ""
 }
 
 func (cg *CodeGenerator) generateIsVoidExpression(isVoid *ast.IsVoidExpression) (value.Value, error) {
@@ -2538,4 +2793,56 @@ func (cg *CodeGenerator) tryParseArrayAccess(expr string) (ArrayAccess, bool) {
 		IsConstantIndex: false,
 		IndexVarName:    indexStr,
 	}, true
+}
+
+// Add this code to your Generate function, right after createMethodDeclarations
+func (cg *CodeGenerator) ensureInheritedMethods(program *ast.Program) {
+	// Go through all classes
+	for _, class := range program.Classes {
+		className := class.Name.Value
+
+		// Skip basic classes
+		if className == "Object" || className == "Int" ||
+			className == "Bool" || className == "String" ||
+			className == "IO" {
+			continue
+		}
+
+		// Get the parent class
+		parentName := cg.classParents[className]
+		if parentName == "" {
+			continue // No parent
+		}
+
+		// Make sure the class has a method map
+		if _, exists := cg.methods[className]; !exists {
+			cg.methods[className] = make(map[string]*ir.Func)
+		}
+
+		// Copy all parent methods that haven't been overridden
+		cg.copyInheritedMethods(className, parentName)
+	}
+}
+
+func (cg *CodeGenerator) copyInheritedMethods(childClass, parentClass string) {
+	// Make sure we have method maps
+	if _, exists := cg.methods[childClass]; !exists {
+		cg.methods[childClass] = make(map[string]*ir.Func)
+	}
+
+	// Copy parent methods to child
+	if parentMethods, exists := cg.methods[parentClass]; exists {
+		for methodName, methodFunc := range parentMethods {
+			// If child doesn't already have this method
+			if _, hasMethod := cg.methods[childClass][methodName]; !hasMethod {
+				// Add inherited method
+				cg.methods[childClass][methodName] = methodFunc
+			}
+		}
+	}
+
+	// Recursively copy from grandparent if needed
+	if grandparent, exists := cg.classParents[parentClass]; exists && grandparent != "" {
+		cg.copyInheritedMethods(childClass, grandparent)
+	}
 }

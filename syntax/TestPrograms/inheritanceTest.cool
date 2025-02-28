@@ -1,0 +1,49 @@
+(*
+ * Basic inheritance and method overriding test.
+ * This tests class inheritance, method overriding, and dynamic dispatch.
+ *)
+class Animal {
+    name : String <- "unnamed";
+    
+    init(n : String) : SELF_TYPE {
+        {
+            name <- n;
+            self;
+        }
+    };
+    
+    sound() : String { "???" };
+    
+    makeSound() : Object {
+        (new IO).out_string(name.concat(" says: ").concat(sound()).concat("\n"))
+    };
+};
+
+class Cat inherits Animal {
+    sound() : String { "meow" };
+};
+
+class Dog inherits Animal {
+    sound() : String { "woof" };
+};
+
+class Cow inherits Animal {
+    sound() : String { "moo" };
+};
+
+class Main inherits IO {
+    main() : Object {
+        let 
+            a : Animal <- new Animal.init("Generic animal"),
+            c : Cat <- new Cat.init("Whiskers"),
+            d : Dog <- new Dog.init("Rover"),
+            mooer : Cow <- new Cow.init("Bessie")
+        in {
+            a.makeSound();
+            c.makeSound();
+            d.makeSound();
+            mooer.makeSound();
+            out_string("Inheritance test completed\n");
+        }
+    };
+};

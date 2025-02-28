@@ -16,3 +16,15 @@ class Dog inherits Animal {
    };
 };
 
+class Main inherits IO{
+   main() : Object {
+      let animal : Animal <- new Animal,
+         cat : Cat <- new Cat,
+         dog : Dog <- new Dog
+      in {
+         out_string("Animal says: ").out_string(animal.noise()).out_string("\n");
+         out_string("Cat says: ").out_string(cat.noise()).out_string("\n");
+         out_string("Dog says: ").out_string(dog.noise()).out_string("\n")
+      }
+   };
+};
