@@ -1,0 +1,33 @@
+class Point {
+   x : Int;
+   y : Int;
+ 
+   init(x_val : Int, y_val : Int) : SELF_TYPE {
+      {
+         x <- x_val;
+         y <- y_val;
+         self;
+      }
+   };
+ 
+   getX() : Int { x };
+   getY() : Int { y };
+   
+   distance(other : Point) : Int {
+      let dx : Int <- x - other.getX(),
+          dy : Int <- y - other.getY() in
+      dx * dx + dy * dy
+   };
+};
+
+class Main inherits IO {
+   main() : Object {
+      let p1 : Point <- new Point.init(3, 4),
+          p2 : Point <- new Point.init(0, 0) in
+      {
+         out_string("Distance squared: ");
+         out_int(p1.distance(p2));
+         out_string("\n");
+      }
+   };
+};

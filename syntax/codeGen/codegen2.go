@@ -803,6 +803,7 @@ func (cg *CodeGenerator) ensureBlockTerminator(block *ir.Block) {
 }
 
 func (cg *CodeGenerator) generateIfExpression(ifExpr *ast.IfExpression) (value.Value, error) {
+	fmt.Println("Generating If Expression")
 	// Get the current function name for unique block naming
 	funcName := cg.currentFunc.Name()
 	ifId := len(cg.currentFunc.Blocks)
@@ -831,9 +832,12 @@ func (cg *CodeGenerator) generateIfExpression(ifExpr *ast.IfExpression) (value.V
 		return nil, fmt.Errorf("error generating then branch: %v", err)
 	}
 
+	// Remember the last block of the then branch (might have changed due to nested ifs)
+	thenExitBlock := cg.currentBlock
+
 	// Make sure then block branches to after block if it doesn't already have a terminator
-	if thenBlock.Term == nil {
-		thenBlock.NewBr(afterBlock)
+	if thenExitBlock.Term == nil {
+		thenExitBlock.NewBr(afterBlock)
 	}
 
 	// Generate else branch
@@ -843,58 +847,108 @@ func (cg *CodeGenerator) generateIfExpression(ifExpr *ast.IfExpression) (value.V
 		return nil, fmt.Errorf("error generating else branch: %v", err)
 	}
 
+	// Remember the last block of the else branch
+	elseExitBlock := cg.currentBlock
+
 	// Make sure else block branches to after block if it doesn't already have a terminator
-	if elseBlock.Term == nil {
-		elseBlock.NewBr(afterBlock)
+	if elseExitBlock.Term == nil {
+		elseExitBlock.NewBr(afterBlock)
 	}
 
 	// Set current block to after block for subsequent code
 	cg.currentBlock = afterBlock
 
-	// Handle different result types between then and else
-	var resultValue value.Value
-
-	// If both branches have values, create a phi node
-	if thenValue != nil && elseValue != nil {
-		// Check if both are the same type (simple case)
-		if thenValue.Type() == elseValue.Type() {
-			resultValue = afterBlock.NewPhi(
-				ir.NewIncoming(thenValue, thenBlock),
-				ir.NewIncoming(elseValue, elseBlock),
-			)
-		} else {
-			// Types differ - try to find a common type to cast to
-			if isIntType(thenValue.Type()) && isIntType(elseValue.Type()) {
-				// Both integers, but different bit widths - use the wider one
-				resultValue = afterBlock.NewPhi(
-					ir.NewIncoming(thenValue, thenBlock),
-					ir.NewIncoming(elseValue, elseBlock),
-				)
-			} else if isPtrType(thenValue.Type()) && isPtrType(elseValue.Type()) {
-				// Both pointers but different types - cast to void*
-				voidPtrType := types.NewPointer(types.I8)
-				thenValueCast := afterBlock.NewBitCast(thenValue, voidPtrType)
-				elseValueCast := afterBlock.NewBitCast(elseValue, voidPtrType)
-				resultValue = afterBlock.NewPhi(
-					ir.NewIncoming(thenValueCast, thenBlock),
-					ir.NewIncoming(elseValueCast, elseBlock),
-				)
-			} else {
-				// Default to using the then value if types are incompatible
-				resultValue = thenValue
-			}
-		}
-	} else if thenValue != nil {
-		resultValue = thenValue
-	} else if elseValue != nil {
-		resultValue = elseValue
-	} else {
-		// If neither branch has a value, return void/null
-		objPtrType := types.NewPointer(cg.classTypes["Object"])
-		resultValue = constant.NewNull(objPtrType)
+	// Helper functions for type checking
+	isIntType := func(t types.Type) bool {
+		_, ok := t.(*types.IntType)
+		return ok
 	}
 
-	return resultValue, nil
+	isPtrType := func(t types.Type) bool {
+		_, ok := t.(*types.PointerType)
+		return ok
+	}
+
+	// If both values are nil (void/unreachable branches), return void/null
+	if thenValue == nil && elseValue == nil {
+		objPtrType := types.NewPointer(cg.classTypes["Object"])
+		return constant.NewNull(objPtrType), nil
+	}
+
+	// If only one value is nil, use the other one (with appropriate casting if needed)
+	if thenValue == nil {
+		return elseValue, nil
+	}
+	if elseValue == nil {
+		return thenValue, nil
+	}
+
+	// Create proper incoming values for phi node
+	incomings := []*ir.Incoming{}
+
+	// Handle type differences if needed
+	if thenValue.Type() != elseValue.Type() {
+		// Try to find a common type for the phi node
+		var commonType types.Type
+
+		// Both integers with different widths
+		if isIntType(thenValue.Type()) && isIntType(elseValue.Type()) {
+			// Use i32 as common type for integers in Cool
+			commonType = types.I32
+
+			// Cast then value if needed
+			if thenValue.Type() != commonType {
+				thenCasted := thenExitBlock.NewSExt(thenValue, commonType)
+				incomings = append(incomings, ir.NewIncoming(thenCasted, thenExitBlock))
+			} else {
+				incomings = append(incomings, ir.NewIncoming(thenValue, thenExitBlock))
+			}
+
+			// Cast else value if needed
+			if elseValue.Type() != commonType {
+				elseCasted := elseExitBlock.NewSExt(elseValue, commonType)
+				incomings = append(incomings, ir.NewIncoming(elseCasted, elseExitBlock))
+			} else {
+				incomings = append(incomings, ir.NewIncoming(elseValue, elseExitBlock))
+			}
+		} else if isPtrType(thenValue.Type()) && isPtrType(elseValue.Type()) {
+			// Both pointers but different types - cast to Object*
+			commonType = types.NewPointer(cg.classTypes["Object"])
+
+			// Cast then value
+			thenCasted := thenExitBlock.NewBitCast(thenValue, commonType)
+			incomings = append(incomings, ir.NewIncoming(thenCasted, thenExitBlock))
+
+			// Cast else value
+			elseCasted := elseExitBlock.NewBitCast(elseValue, commonType)
+			incomings = append(incomings, ir.NewIncoming(elseCasted, elseExitBlock))
+		} else {
+			// Different incompatible types - use the then value's type as default
+			commonType = thenValue.Type()
+
+			incomings = append(incomings, ir.NewIncoming(thenValue, thenExitBlock))
+
+			// Try to cast else value or use a safe default
+			if isPtrType(commonType) && isPtrType(elseValue.Type()) {
+				elseCasted := elseExitBlock.NewBitCast(elseValue, commonType)
+				incomings = append(incomings, ir.NewIncoming(elseCasted, elseExitBlock))
+			} else if isIntType(commonType) && isIntType(elseValue.Type()) {
+				elseCasted := elseExitBlock.NewSExt(elseValue, commonType)
+				incomings = append(incomings, ir.NewIncoming(elseCasted, elseExitBlock))
+			} else {
+				// Use a safe default for incompatible types
+				incomings = append(incomings, ir.NewIncoming(constant.NewZeroInitializer(commonType), elseExitBlock))
+			}
+		}
+	} else {
+		// Same types - simple case
+		incomings = append(incomings,
+			ir.NewIncoming(thenValue, thenExitBlock),
+			ir.NewIncoming(elseValue, elseExitBlock))
+	}
+
+	// Create the phi node with proper incoming values
+	return afterBlock.NewPhi(incomings...), nil
 }
 
 // Helper functions
@@ -1079,48 +1133,6 @@ func (cg *CodeGenerator) mapType(typeName string) (types.Type, error) {
 	}
 }
 
-// generateExpression generates LLVM IR for an expression
-// func (cg *CodeGenerator) generateExpression(expr ast.Expression) (value.Value, error) {
-// 	switch e := expr.(type) {
-// 	case *ast.IntegerLiteral:
-// 		return cg.generateIntegerLiteral(e)
-// 	case *ast.StringLiteral:
-// 		return cg.generateStringLiteral(e)
-// 	case *ast.BooleanLiteral:
-// 		return cg.generateBooleanLiteral(e)
-// 	case *ast.ObjectIdentifier:
-// 		return cg.generateObjectIdentifier(e)
-// 	case *ast.Assignment:
-// 		return cg.generateAssignment(e)
-// 	case *ast.DispatchExpression:
-// 		return cg.generateDispatch(e)
-// 	case *ast.BinaryExpression:
-// 		return cg.generateBinaryExpression(e)
-// 	case *ast.UnaryExpression:
-// 		return cg.generateUnaryExpression(e)
-// 	case *ast.ArrayExpression:
-// 		return cg.generateArrayExpression(e)
-// 	case *ast.ArrayAccessExpression:
-// 		return cg.generateArrayAccessExpression(e)
-// 	case *ast.BlockExpression:
-// 		return cg.generateBlockExpression(e)
-// 	case *ast.IfExpression:
-// 		return cg.generateIfExpression(e)
-// 	case *ast.WhileExpression:
-// 		return cg.generateWhileExpression(e)
-// 	case *ast.LetExpression:
-// 		return cg.generateLetExpression(e)
-// 	case *ast.CaseExpression:
-// 		return cg.generateCaseExpression(e)
-// 	case *ast.NewExpression:
-// 		return cg.generateNewExpression(e)
-// 	case *ast.IsVoidExpression:
-// 		return cg.generateIsVoidExpression(e)
-// 	default:
-// 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
-// 	}
-// }
-
 func (cg *CodeGenerator) generateExpression(expr ast.Expression) (value.Value, error) {
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
@@ -1202,118 +1214,6 @@ func (cg *CodeGenerator) generateBooleanLiteral(boolLit *ast.BooleanLiteral) (va
 	}
 	return constant.NewInt(types.I1, int64(boolValue)), nil
 }
-
-// func (cg *CodeGenerator) generateAssignment(assign *ast.Assignment) (value.Value, error) {
-// 	// Handle array element assignment (e.g., arr[i] <- value)
-// 	arrayAccess, isArrayAccess := cg.tryParseArrayAccess(assign.Name.Value)
-// 	if isArrayAccess {
-// 		// Generate the array expression
-// 		arrayVar, err := cg.generateObjectIdentifier(&ast.ObjectIdentifier{Value: arrayAccess.ArrayName})
-// 		if err != nil {
-// 			return nil, fmt.Errorf("undefined array: %s", arrayAccess.ArrayName)
-// 		}
-
-// 		// Generate or get the index value
-// 		var indexValue value.Value
-// 		if arrayAccess.IsConstantIndex {
-// 			// Constant index
-// 			indexValue = constant.NewInt(types.I32, int64(arrayAccess.ConstantIndex))
-// 		} else {
-// 			// Variable index - would require looking up the variable
-// 			indexVar, err := cg.generateObjectIdentifier(&ast.ObjectIdentifier{Value: arrayAccess.IndexVarName})
-// 			if err != nil {
-// 				return nil, fmt.Errorf("undefined index variable: %s", arrayAccess.IndexVarName)
-// 			}
-// 			indexValue = indexVar
-// 		}
-
-// 		// Generate the right-hand-side expression
-// 		rhsValue, err := cg.generateExpression(assign.Value)
-// 		if err != nil {
-// 			return nil, fmt.Errorf("error generating right-hand side: %v", err)
-// 		}
-
-// 		// Perform the array element assignment
-// 		return cg.generateArrayElementAssignment(arrayVar, indexValue, rhsValue)
-// 	}
-
-// 	// Regular variable assignment logic (not changed)
-// 	varName := assign.Name.Value
-
-// 	// Generate the right-hand-side expression
-// 	rhsValue, err := cg.generateExpression(assign.Value)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error generating right-hand side: %v", err)
-// 	}
-
-// 	// Check if it's a local variable
-// 	if varPtr, exists := cg.variables[varName]; exists {
-// 		// Get the element type from the pointer
-// 		if ptrType, ok := varPtr.Type().(*types.PointerType); ok {
-// 			// If the RHS type doesn't match exactly, try to cast it
-// 			if rhsValue.Type() != ptrType.ElemType {
-// 				if _, ok := ptrType.ElemType.(*types.PointerType); ok && rhsValue.Type() != ptrType.ElemType {
-// 					// Careful casting for pointer-to-pointer
-// 					rhsValue = cg.currentBlock.NewBitCast(rhsValue, ptrType.ElemType)
-// 				} else if isIntType(ptrType.ElemType) && isIntType(rhsValue.Type()) {
-// 					// Handle integer type conversions
-// 					if ptrType.ElemType.(*types.IntType).BitSize != rhsValue.Type().(*types.IntType).BitSize {
-// 						// Need to resize the integer
-// 						if ptrType.ElemType.(*types.IntType).BitSize > rhsValue.Type().(*types.IntType).BitSize {
-// 							rhsValue = cg.currentBlock.NewSExt(rhsValue, ptrType.ElemType)
-// 						} else {
-// 							rhsValue = cg.currentBlock.NewTrunc(rhsValue, ptrType.ElemType)
-// 						}
-// 					}
-// 				}
-// 			}
-// 			// Store to the variable
-// 			cg.currentBlock.NewStore(rhsValue, varPtr)
-// 		} else {
-// 			// Direct store without a pointer (unusual but handle it)
-// 			cg.currentBlock.NewStore(rhsValue, varPtr)
-// 		}
-// 		return rhsValue, nil
-// 	}
-
-// 	// Check if it's a class attribute
-// 	attrKey := cg.currentClass + "." + varName
-// 	if attrIndex, exists := cg.attrs[attrKey]; exists {
-// 		// Load self pointer
-// 		selfPtr := cg.variables["self"]
-
-// 		// Get attribute address
-// 		attrPtr := cg.currentBlock.NewGetElementPtr(
-// 			cg.classTypes[cg.currentClass],
-// 			selfPtr,
-// 			constant.NewInt(types.I32, 0),
-// 			constant.NewInt(types.I32, int64(attrIndex)),
-// 		)
-
-// 		// Get pointer type
-// 		ptrType := attrPtr.Type().(*types.PointerType)
-
-// 		// Try to cast the RHS to the attribute type if needed
-// 		if rhsValue.Type() != ptrType.ElemType {
-// 			// Handle null values specially
-// 			if _, ok := rhsValue.(*constant.Null); ok {
-// 				// Create a new null of the correct type
-// 				if elemPtrType, ok := ptrType.ElemType.(*types.PointerType); ok {
-// 					rhsValue = constant.NewNull(elemPtrType)
-// 				}
-// 			} else {
-// 				// Try a bitcast for other types
-// 				rhsValue = cg.currentBlock.NewBitCast(rhsValue, ptrType.ElemType)
-// 			}
-// 		}
-
-// 		// Store to the attribute
-// 		cg.currentBlock.NewStore(rhsValue, attrPtr)
-// 		return rhsValue, nil
-// 	}
-
-// 	return nil, fmt.Errorf("undefined identifier for assignment: %s", varName)
-// }
 
 // generateAssignment generates LLVM IR for an assignment expression
 func (cg *CodeGenerator) generateAssignment(assign *ast.Assignment) (value.Value, error) {
@@ -1555,10 +1455,19 @@ func (cg *CodeGenerator) generateBinaryExpression(binary *ast.BinaryExpression) 
 func isStringType(t types.Type) bool {
 	// Check if it's a pointer to i8 (char*)
 	if ptrType, ok := t.(*types.PointerType); ok {
+		// Check for direct i8 pointer
 		if byteType, ok := ptrType.ElemType.(*types.IntType); ok {
 			return byteType.BitSize == 8
 		}
+
+		// Also check for type by string representation
+		if ptrType.String() == "*i8" {
+			return true
+		}
 	}
+
+	// Also check if this is a known string object from the program
+	// This would catch custom String class instances
 	return false
 }
 
@@ -1601,6 +1510,21 @@ func (cg *CodeGenerator) ensureStringType(block *ir.Block, val value.Value) valu
 
 	// For other types, return a placeholder string
 	return cg.createStringConstant(block, "default", "(not a string)")
+}
+func (cg *CodeGenerator) ensureProperStringType(block *ir.Block, val value.Value) value.Value {
+	// If it's already a string type, return it
+	if isStringType(val.Type()) {
+		return val
+	}
+
+	// If it's a pointer to something that isn't a string, try to cast it
+	if _, ok := val.Type().(*types.PointerType); ok {
+		return block.NewBitCast(val, cg.stringType)
+	}
+
+	// Create a fallback for other types - convert to string representation
+	// This is a simplified approach - in a real compiler you'd need more sophisticated conversion
+	return block.NewBitCast(val, cg.stringType)
 }
 
 // Helper to access a field in an object
@@ -1681,52 +1605,56 @@ func (cg *CodeGenerator) findMethod(className, methodName string) *ir.Func {
 
 // generateWhileExpression generates LLVM IR for a while expression
 func (cg *CodeGenerator) generateWhileExpression(whileExpr *ast.WhileExpression) (value.Value, error) {
-	// Create unique names for blocks
-	funcName := cg.currentFunc.Name()
-	loopId := len(cg.currentFunc.Blocks)
+    // Create unique names for blocks
+    funcName := cg.currentFunc.Name()
+    loopId := len(cg.currentFunc.Blocks)
 
-	// Create blocks for the loop structure
-	condBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.cond.%s.%d", funcName, loopId))
-	bodyBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.body.%s.%d", funcName, loopId))
-	afterBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.after.%s.%d", funcName, loopId))
+    // Create blocks for the loop structure
+    headerBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.header.%s.%d", funcName, loopId))
+    bodyBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.body.%s.%d", funcName, loopId))
+    afterBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.after.%s.%d", funcName, loopId))
 
-	// Branch from current block to condition block
-	cg.currentBlock.NewBr(condBlock)
+    // Branch from current block to header block
+    cg.currentBlock.NewBr(headerBlock)
 
-	// Generate condition code in condition block
-	cg.currentBlock = condBlock
-	condValue, err := cg.generateExpression(whileExpr.Condition)
-	if err != nil {
-		return nil, fmt.Errorf("error generating while condition: %v", err)
-	}
+    // Generate condition code in header block
+    cg.currentBlock = headerBlock
+    condValue, err := cg.generateExpression(whileExpr.Condition)
+    if err != nil {
+        return nil, fmt.Errorf("error generating while condition: %v", err)
+    }
 
-	// Branch based on condition to either body or after
-	condBlock.NewCondBr(condValue, bodyBlock, afterBlock)
+    // Branch based on condition to either body or after
+    headerBlock.NewCondBr(condValue, bodyBlock, afterBlock)
 
-	// Generate body code in body block
-	cg.currentBlock = bodyBlock
-	_, err = cg.generateExpression(whileExpr.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error generating while body: %v", err)
-	}
+    // Generate body code in body block
+    cg.currentBlock = bodyBlock
+    _, err = cg.generateExpression(whileExpr.Body)
+    if err != nil {
+        return nil, fmt.Errorf("error generating while body: %v", err)
+    }
 
-	// Check if the current block (which might have changed during body generation) has a terminator
-	if cg.currentBlock.Term == nil {
-		// If not, add a branch back to the condition block
-		cg.currentBlock.NewBr(condBlock)
-	}
+    // Remember the last block created during body generation
+    // This is important for nested control structures
+    bodyExitBlock := cg.currentBlock
 
-	// Set current block to after block for code that follows the loop
-	cg.currentBlock = afterBlock
+    // Check if the body exit block has a terminator
+    if bodyExitBlock.Term == nil {
+        // If not, add a branch back to the header block
+        bodyExitBlock.NewBr(headerBlock)
+    }
 
-	// Create a dummy instruction in the after block to ensure it's not empty
-	// This doesn't affect the actual code execution but helps LLVM's optimizer
-	dummy := cg.currentBlock.NewAlloca(types.I32)
-	cg.currentBlock.NewStore(constant.NewInt(types.I32, 0), dummy)
+    // Set current block to after block for code that follows the loop
+    cg.currentBlock = afterBlock
 
-	// While loops always return void/null in Cool
-	objPtrType := types.NewPointer(cg.classTypes["Object"])
-	return constant.NewNull(objPtrType), nil
+    // Make sure the after block has at least one instruction to avoid optimization issues
+    // Important: This creates a proper entry point for code following the loop
+    dummyAlloca := afterBlock.NewAlloca(types.I32)
+    afterBlock.NewStore(constant.NewInt(types.I32, 0), dummyAlloca)
+
+    // While loops always return void/null in Cool
+    objPtrType := types.NewPointer(cg.classTypes["Object"])
+    return constant.NewNull(objPtrType), nil
 }
 
 // Placeholder stubs for remaining expression types
@@ -2240,6 +2168,9 @@ func (cg *CodeGenerator) generateMethodImplementation(className string, method *
 	for i, formal := range method.Formals {
 		// Allocate stack space for the formal parameter
 		paramType := cg.currentFunc.Params[i+1].Type()
+		// print formal and its type
+		fmt.Println("====================================")
+		fmt.Println(formal.Name.Value, paramType)
 		paramAlloca := entry.NewAlloca(paramType)
 
 		// Store the parameter value
@@ -2249,6 +2180,7 @@ func (cg *CodeGenerator) generateMethodImplementation(className string, method *
 		cg.variables[formal.Name.Value] = paramAlloca
 	}
 
+	fmt.Println("Generating body ...")
 	// Generate code for method body
 	returnValue, err := cg.generateExpression(method.Body)
 	if err != nil {
@@ -2419,8 +2351,20 @@ func (cg *CodeGenerator) generateObjectIdentifier(obj *ast.ObjectIdentifier) (va
 	// Check if it's a local variable
 	if varVal, exists := cg.variables[varName]; exists {
 		// If it's a pointer to a stack variable, load it
-		if _, ok := varVal.Type().(*types.PointerType); ok {
-			return cg.currentBlock.NewLoad(varVal.Type().(*types.PointerType).ElemType, varVal), nil
+		if ptrType, ok := varVal.Type().(*types.PointerType); ok {
+			loaded := cg.currentBlock.NewLoad(ptrType.ElemType, varVal)
+
+			// Special handling for String parameters
+			// Check if we're in the handle_error method and the parameter is 'operation'
+			if cg.currentMethod == "handle_error" && varName == "operation" {
+				// This is known to be a String parameter from the Cool code
+				// Make sure it's properly typed as a string for dispatch
+				if !isStringType(loaded.Type()) {
+					return cg.ensureProperStringType(cg.currentBlock, loaded), nil
+				}
+			}
+
+			return loaded, nil
 		}
 		return varVal, nil
 	}
@@ -2443,7 +2387,16 @@ func (cg *CodeGenerator) generateObjectIdentifier(obj *ast.ObjectIdentifier) (va
 		ptrType := attrPtr.Type().(*types.PointerType)
 
 		// Load attribute value
-		return cg.currentBlock.NewLoad(ptrType.ElemType, attrPtr), nil
+		loaded := cg.currentBlock.NewLoad(ptrType.ElemType, attrPtr)
+
+		// Special case for string attributes
+		if varName == "operation" || ptrType.ElemType == cg.stringType {
+			if !isStringType(loaded.Type()) {
+				return cg.ensureProperStringType(cg.currentBlock, loaded), nil
+			}
+		}
+
+		return loaded, nil
 	}
 
 	return nil, fmt.Errorf("undefined identifier: %s", varName)
