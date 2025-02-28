@@ -4,6 +4,7 @@ import (
 	"cool-compiler/ast"
 	"cool-compiler/lexer"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	INT       = "Int"
 	STRING    = "String"
 	BOOL      = "Bool"
+	ARRAY     = "Array" // Added Array as a basic type
 )
 
 // For the semant we will use feature interface for (semantic analysis)
@@ -171,6 +173,14 @@ func (sa *SemanticAnalyser) initBasicClassMethods() {
 			{TypeDecl: &ast.TypeIdentifier{Value: INT}},
 		},
 	}
+
+	// Add Array class with size method
+	arrayClass := sa.inheritanceGraph.classes[ARRAY]
+	arrayClass.methods["size"] = &Method{
+		name:    "size",
+		retType: INT,
+		formals: []*ast.Formal{},
+	}
 }
 
 func NewSemanticAnalyser() *SemanticAnalyser {
@@ -188,6 +198,7 @@ func NewSemanticAnalyser() *SemanticAnalyser {
 	sa.basicClasses[INT] = true
 	sa.basicClasses[STRING] = true
 	sa.basicClasses[BOOL] = true
+	sa.basicClasses[ARRAY] = true // Add Array as a basic class
 
 	return sa
 }
@@ -209,7 +220,7 @@ func (sa *SemanticAnalyser) getTypeAncestors(typeName string) []string {
 	return ancestors
 }
 
-// buildd the inheritance graph
+// Build the inheritance graph
 func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 	// Add basic classes (Object)
 	sa.inheritanceGraph.classes["Object"] = &ClassNode{
@@ -220,8 +231,8 @@ func (sa *SemanticAnalyser) initInheritanceGraph(program *ast.Program) {
 		attrs:    make(map[string]*Attribute),
 	}
 
-	// Add other basic classes (IO, Int, String, Bool)
-	basicClasses := []string{"IO", "Int", "String", "Bool"}
+	// Add other basic classes (IO, Int, String, Bool, Array)
+	basicClasses := []string{"IO", "Int", "String", "Bool", "Array"}
 	for _, className := range basicClasses {
 		sa.inheritanceGraph.classes[className] = &ClassNode{
 			name:     className,
@@ -284,7 +295,7 @@ func (sa *SemanticAnalyser) validateClassMethodAccess() {
 	for className, classNode := range sa.inheritanceGraph.classes {
 		// Skip basic classes that are already validated
 		if className == "Object" || className == "Int" ||
-			className == "Bool" || className == "String" {
+			className == "Bool" || className == "String" || className == "Array" {
 			continue
 		}
 
@@ -348,6 +359,46 @@ func (sa *SemanticAnalyser) Errors() []string {
 	return sa.errors
 }
 
+// Function to parse array types like "Array[Type]"
+func (sa *SemanticAnalyser) parseArrayType(typeName string) (bool, string) {
+	// Check if it's an array type
+	if strings.HasPrefix(typeName, "Array[") && strings.HasSuffix(typeName, "]") {
+		// Extract the element type
+		elementType := typeName[6 : len(typeName)-1]
+
+		// Validate that the element type exists
+		if _, exists := sa.inheritanceGraph.classes[elementType]; !exists && elementType != "SELF_TYPE" {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Array element type %s is undefined",
+				elementType))
+			return true, "Object" // Return Object as fallback
+		}
+
+		return true, elementType
+	}
+
+	return false, ""
+}
+
+// Function to check if a type exists, including array types
+func (sa *SemanticAnalyser) typeExists(typeName string) bool {
+	// Handle SELF_TYPE
+	if typeName == "SELF_TYPE" {
+		return true
+	}
+
+	// Check if it's an array type
+	isArray, elementType := sa.parseArrayType(typeName)
+	if isArray {
+		// For array types, we validate the element type
+		return elementType == "SELF_TYPE" || sa.typeExists(elementType)
+	}
+
+	// For regular types, check in the inheritance graph
+	_, exists := sa.inheritanceGraph.classes[typeName]
+	return exists
+}
+
 // Fixed validateInheritanceGraph to properly detect cycles
 func (sa *SemanticAnalyser) validateInheritanceGraph() bool {
 	visited := make(map[string]bool)
@@ -403,7 +454,7 @@ func (sa *SemanticAnalyser) validateInheritanceGraph() bool {
 			}
 
 			// Check if trying to redefine basic classes or IO
-			if (className == INT || className == STRING || className == BOOL || className == IO) &&
+			if (className == INT || className == STRING || className == BOOL || className == IO || className == ARRAY) &&
 				node.parent != OBJECT {
 				sa.errors = append(sa.errors, fmt.Sprintf(
 					"Cannot redefine basic class %s",
@@ -511,6 +562,7 @@ func (sa *SemanticAnalyser) buildClassesSymboltables(program *ast.Program) {
 	sa.globalSymbolTable.AddEntry("Int", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Int"}})
 	sa.globalSymbolTable.AddEntry("String", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "String"}})
 	sa.globalSymbolTable.AddEntry("Bool", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Bool"}})
+	sa.globalSymbolTable.AddEntry("Array", &SymbolEntry{Type: "Class", Token: lexer.Token{Literal: "Array"}})
 
 	for _, class := range program.Classes {
 		if _, ok := sa.globalSymbolTable.Lookup(class.Name.Value); ok {
@@ -639,6 +691,19 @@ func (sa *SemanticAnalyser) buildExpressionScope(expr ast.Expression, parentScop
 		sa.buildExpressionScope(e.Condition, whileScope)
 		sa.buildExpressionScope(e.Body, whileScope)
 		return whileScope
+
+	case *ast.ArrayAccessExpression:
+		// Handle array access
+		sa.buildExpressionScope(e.Array, parentScope)
+		sa.buildExpressionScope(e.Index, parentScope)
+		return parentScope
+
+	case *ast.ArrayExpression:
+		// Handle array creation
+		if e.Size != nil {
+			sa.buildExpressionScope(e.Size, parentScope)
+		}
+		return parentScope
 
 	default:
 		return parentScope
@@ -799,6 +864,11 @@ func (sa *SemanticAnalyser) checkInitialization(expr ast.Expression, st *SymbolT
 		// Now mark the variable as initialized
 		initialized[e.Name.Value] = true
 
+	case *ast.ArrayAccessExpression:
+		// Check both the array and index expressions
+		sa.checkInitialization(e.Array, st, initialized)
+		sa.checkInitialization(e.Index, st, initialized)
+
 	case *ast.LetExpression:
 		// Create a new initialization map for let scope
 		letInit := make(map[string]bool)
@@ -923,6 +993,11 @@ func (sa *SemanticAnalyser) checkInitialization(expr ast.Expression, st *SymbolT
 	case *ast.IsVoidExpression:
 		sa.checkInitialization(e.Expression, st, initialized)
 
+	case *ast.ArrayExpression:
+		if e.Size != nil {
+			sa.checkInitialization(e.Size, st, initialized)
+		}
+
 		// No need to check initialization for literals, new expressions
 	}
 }
@@ -946,9 +1021,18 @@ func (sa *SemanticAnalyser) typeCheckClass(cls *ast.Class, st *SymbolTable) {
 }
 
 func (sa *SemanticAnalyser) typeCheckAttribute(attribute *ast.Attribute, st *SymbolTable) {
-	// Check if the declared type exists
+	// Check if the declared type exists (now handles array types)
 	if attribute.TypeDecl.Value != "SELF_TYPE" {
-		if _, exists := sa.inheritanceGraph.classes[attribute.TypeDecl.Value]; !exists {
+		isArray, elementType := sa.parseArrayType(attribute.TypeDecl.Value)
+		if isArray {
+			// For array types, check that the element type exists
+			if !sa.typeExists(elementType) {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Attribute %s has array with undefined element type %s",
+					attribute.Name.Value, elementType))
+				return
+			}
+		} else if !sa.typeExists(attribute.TypeDecl.Value) {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Attribute %s has undefined type %s",
 				attribute.Name.Value, attribute.TypeDecl.Value))
@@ -998,8 +1082,8 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 		}
 		seenParams[formal.Name.Value] = true
 
-		// Check formal parameter type exists
-		if _, exists := sa.inheritanceGraph.classes[formal.TypeDecl.Value]; !exists {
+		// Check formal parameter type exists (handle array types)
+		if !sa.typeExists(formal.TypeDecl.Value) {
 			sa.errors = append(sa.errors, fmt.Sprintf(
 				"Formal parameter %s has undefined type %s in method %s from class %s",
 				formal.Name.Value, formal.TypeDecl.Value, method.Name.Value, sa.currentClass))
@@ -1013,8 +1097,8 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 		})
 	}
 
-	// Check if return type exists
-	if _, exists := sa.inheritanceGraph.classes[method.TypeDecl.Value]; !exists && method.TypeDecl.Value != "SELF_TYPE" {
+	// Check if return type exists (handle array types)
+	if !sa.typeExists(method.TypeDecl.Value) {
 		sa.errors = append(sa.errors, fmt.Sprintf(
 			"Method %s has undefined return type %s",
 			method.Name.Value, method.TypeDecl.Value))
@@ -1030,6 +1114,12 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 		expectedType = sa.currentClass
 	}
 
+	// Fix for methods returning SELF_TYPE
+	if method.TypeDecl.Value == "SELF_TYPE" && bodyType == sa.currentClass {
+		// This is valid - the class matches SELF_TYPE
+		return
+	}
+
 	if !sa.isTypeConformant(bodyType, expectedType) {
 		sa.errors = append(sa.errors, fmt.Sprintf(
 			"Method %s body type %s does not conform to declared return type %s",
@@ -1037,6 +1127,7 @@ func (sa *SemanticAnalyser) typeCheckMethod(method *ast.Method, st *SymbolTable)
 	}
 }
 
+// Enhanced getExpressionType to handle array access and array expressions
 func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *SymbolTable) string {
 	switch e := expression.(type) {
 	case *ast.IntegerLiteral:
@@ -1068,15 +1159,54 @@ func (sa *SemanticAnalyser) getExpressionType(expression ast.Expression, st *Sym
 	case *ast.DispatchExpression:
 		return sa.GetDispatchExpressionType(e, st)
 	case *ast.ObjectIdentifier:
-		a, ok := st.Lookup(e.Value)
-		if !ok {
-			sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s", e.Value))
-			return "Object"
+		return sa.getIdentifierType(e, st)
+	case *ast.ArrayAccessExpression:
+		return sa.getArrayAccessType(e, st)
+	case *ast.ArrayExpression:
+		// Return the array type
+		if e.Type != nil {
+			return e.Type.Value
 		}
-		return a.Type
+		return "Object"
 	default:
 		return "Object"
 	}
+}
+
+// Helper method to get identifier type - enhanced to handle array types
+func (sa *SemanticAnalyser) getIdentifierType(identifier *ast.ObjectIdentifier, st *SymbolTable) string {
+	entry, ok := st.Lookup(identifier.Value)
+	if !ok {
+		sa.errors = append(sa.errors, fmt.Sprintf("undefined identifier %s", identifier.Value))
+		return "Object"
+	}
+	return entry.Type
+}
+
+// New method to handle array access expressions
+func (sa *SemanticAnalyser) getArrayAccessType(arrayAccess *ast.ArrayAccessExpression, st *SymbolTable) string {
+	// First, get the array expression type
+	arrayType := sa.getExpressionType(arrayAccess.Array, st)
+
+	// Type check the index expression - must be Int
+	indexType := sa.getExpressionType(arrayAccess.Index, st)
+	if indexType != "Int" {
+		sa.errors = append(sa.errors, fmt.Sprintf(
+			"Array index must be of type Int, got %s",
+			indexType))
+	}
+
+	// Parse the array type to get the element type
+	isArray, elementType := sa.parseArrayType(arrayType)
+	if isArray {
+		return elementType
+	}
+
+	// If it's not a recognized array type, report error
+	sa.errors = append(sa.errors, fmt.Sprintf(
+		"Cannot perform array access on non-array type %s",
+		arrayType))
+	return "Object"
 }
 
 func (sa *SemanticAnalyser) lookupAttributeInClassHierarchy(className, attrName string) (string, bool) {
@@ -1097,13 +1227,27 @@ func (sa *SemanticAnalyser) lookupAttributeInClassHierarchy(className, attrName 
 	return "", false
 }
 
+// Enhanced to support array types
 func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *SymbolTable) string {
 	// Handle SELF_TYPE specially
 	if ne.Type.Value == "SELF_TYPE" {
 		return "SELF_TYPE" // Preserve SELF_TYPE in new expressions
 	}
 
-	// Check if the type exists
+	// Check if it's an array type
+	isArray, elementType := sa.parseArrayType(ne.Type.Value)
+	if isArray {
+		// Validate the element type exists
+		if !sa.typeExists(elementType) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Array element type %s is undefined in new expression",
+				elementType))
+			return "Object" // Return Object as fallback
+		}
+		return ne.Type.Value // Return full array type
+	}
+
+	// For regular types, check if they exist
 	if _, ok := sa.inheritanceGraph.classes[ne.Type.Value]; !ok {
 		sa.errors = append(sa.errors, fmt.Sprintf(
 			"Undefined type %s in new expression",
@@ -1117,15 +1261,17 @@ func (sa *SemanticAnalyser) GetNewExpressionType(ne *ast.NewExpression, st *Symb
 func (sa *SemanticAnalyser) getWhileExpressionType(wexpr *ast.WhileExpression, st *SymbolTable) string {
 	conditionType := sa.getExpressionType(wexpr.Condition, st)
 	if conditionType != "Bool" {
-		sa.errors = append(sa.errors, fmt.Sprintf("condition of if statement is of type %s, expected Bool", conditionType))
+		sa.errors = append(sa.errors, fmt.Sprintf("condition of while statement is of type %s, expected Bool", conditionType))
 		return "Object"
 	}
 
-	return sa.getExpressionType(wexpr.Body, st)
+	// Type check the body, but while always returns Object in Cool
+	sa.getExpressionType(wexpr.Body, st)
+	return "Object"
 }
 
 func (sa *SemanticAnalyser) getBlockExpressionType(bexpr *ast.BlockExpression, st *SymbolTable) string {
-	lastType := ""
+	lastType := "Object" // Default
 	for _, expression := range bexpr.Expressions {
 		lastType = sa.getExpressionType(expression, st)
 	}
@@ -1150,6 +1296,7 @@ func (sa *SemanticAnalyser) getIfExpressionType(ifexpr *ast.IfExpression, st *Sy
 	return sa.leastUpperBound(thenType, elseType)
 }
 
+// Enhanced to support array types
 func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *SymbolTable) string {
 	// Create a new scope for this let expression
 	letScope := NewSymbolTable(st)
@@ -1158,7 +1305,17 @@ func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *Symb
 	for _, binding := range le.Bindings {
 		// First verify the declared type exists
 		if binding.Type.Value != "SELF_TYPE" {
-			if _, exists := sa.inheritanceGraph.classes[binding.Type.Value]; !exists {
+			// Check if it's an array type
+			isArray, elementType := sa.parseArrayType(binding.Type.Value)
+			if isArray {
+				// Validate element type
+				if !sa.typeExists(elementType) {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"Let binding uses array with undefined element type %s",
+						elementType))
+					continue
+				}
+			} else if !sa.typeExists(binding.Type.Value) {
 				sa.errors = append(sa.errors, fmt.Sprintf(
 					"Let binding uses undefined type %s",
 					binding.Type.Value))
@@ -1167,11 +1324,10 @@ func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *Symb
 		}
 
 		// If there's an initialization expression
-		var initType string
 		if binding.Init != nil {
 			// Type check the initialization using the current scope
 			// This allows init expressions to reference previous bindings
-			initType = sa.getExpressionType(binding.Init, letScope)
+			initType := sa.getExpressionType(binding.Init, letScope)
 
 			// Handle SELF_TYPE in initialization
 			if initType == "SELF_TYPE" {
@@ -1203,8 +1359,75 @@ func (sa *SemanticAnalyser) GetLetExpressionType(le *ast.LetExpression, st *Symb
 	return sa.getExpressionType(le.In, letScope)
 }
 
-// TO VERIFY
+// Enhanced to handle array access assignments
 func (sa *SemanticAnalyser) GetAssignmentExpressionType(a *ast.Assignment, st *SymbolTable) string {
+	// Special case for array access assignment
+	if strings.Contains(a.Name.Value, "[") && strings.Contains(a.Name.Value, "]") {
+		// Attempt to parse as array access (e.g., "array[index]")
+		parts := strings.SplitN(a.Name.Value, "[", 2)
+		if len(parts) == 2 {
+			arrayName := parts[0]
+
+			// Check if the array exists
+			entry, exists := st.Lookup(arrayName)
+			if !exists {
+				// Try to find in parent class attributes
+				attrType, found := sa.lookupAttributeInClassHierarchy(sa.currentClass, arrayName)
+				if !found {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"undefined array identifier %s in assignment",
+						arrayName))
+					return "Object"
+				}
+
+				// Check if it's an array type
+				isArray, elementType := sa.parseArrayType(attrType)
+				if !isArray {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"Cannot perform array assignment on non-array type %s",
+						attrType))
+					return "Object"
+				}
+
+				// Get the type of the expression being assigned
+				exprType := sa.getExpressionType(a.Value, st)
+
+				// Check type conformance with element type
+				if !sa.isTypeConformant(exprType, elementType) {
+					sa.errors = append(sa.errors, fmt.Sprintf(
+						"Type %s of assigned expression does not conform to array element type %s",
+						exprType, elementType))
+					return elementType
+				}
+
+				return exprType
+			}
+
+			// Check if the identifier is an array
+			isArray, elementType := sa.parseArrayType(entry.Type)
+			if !isArray {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Cannot perform array assignment on non-array type %s",
+					entry.Type))
+				return "Object"
+			}
+
+			// Get the type of the expression being assigned
+			exprType := sa.getExpressionType(a.Value, st)
+
+			// Check type conformance with element type
+			if !sa.isTypeConformant(exprType, elementType) {
+				sa.errors = append(sa.errors, fmt.Sprintf(
+					"Type %s of assigned expression does not conform to array element type %s",
+					exprType, elementType))
+				return elementType
+			}
+
+			return exprType
+		}
+	}
+
+	// Handle normal variable assignment
 	entry, exists := st.Lookup(a.Name.Value)
 	if !exists {
 		// Try to find in parent class attributes
@@ -1343,14 +1566,11 @@ func (sa *SemanticAnalyser) GetCaseExpressionType(ce *ast.CaseExpression, st *Sy
 		seenTypes[branch.Type.Value] = true
 
 		// Verify the branch type exists in the class hierarchy
-		if branch.Type.Value != "SELF_TYPE" {
-			_, exists := sa.inheritanceGraph.classes[branch.Type.Value]
-			if !exists {
-				sa.errors = append(sa.errors, fmt.Sprintf(
-					"Undefined type %s in case branch",
-					branch.Type.Value))
-				continue
-			}
+		if !sa.typeExists(branch.Type.Value) {
+			sa.errors = append(sa.errors, fmt.Sprintf(
+				"Undefined type %s in case branch",
+				branch.Type.Value))
+			continue
 		}
 
 		// Create new scope for the branch with the pattern variable
@@ -1384,6 +1604,13 @@ func (sa *SemanticAnalyser) getAncestors(typeName string) []string {
 	ancestors := make([]string, 0)
 	current := typeName
 
+	// Handle array types specially
+	isArray, _ := sa.parseArrayType(typeName)
+	if isArray {
+		// For array types, the only ancestor is Object
+		return []string{typeName, "Object"}
+	}
+
 	for current != "" {
 		ancestors = append(ancestors, current)
 		if node, exists := sa.inheritanceGraph.classes[current]; exists {
@@ -1396,7 +1623,7 @@ func (sa *SemanticAnalyser) getAncestors(typeName string) []string {
 	return ancestors
 }
 
-// Implement dispatch expression type checking
+// Enhanced dispatch type checking to handle array methods
 func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression, st *SymbolTable) string {
 	// Get type of object being dispatched on
 	var objectType string
@@ -1409,6 +1636,13 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 	// Handle SELF_TYPE
 	if objectType == "SELF_TYPE" {
 		objectType = sa.currentClass
+	}
+
+	// Special case for Array.size() method
+	isArray, _ := sa.parseArrayType(objectType)
+	if isArray && de.Method.Value == "size" && len(de.Arguments) == 0 {
+		// Array.size() returns Int
+		return "Int"
 	}
 
 	// Handle static dispatch
@@ -1466,8 +1700,28 @@ func (sa *SemanticAnalyser) GetDispatchExpressionType(de *ast.DispatchExpression
 
 // Fixed method to handle inheritance properly when looking up methods
 func (sa *SemanticAnalyser) findMethodInClassAndAncestors(className, methodName string) (*Method, string, bool) {
+	// Special case for Array methods
+	isArray, _ := sa.parseArrayType(className)
+	if isArray && methodName == "size" {
+		// Return the size method of Array class
+		if method, exists := sa.inheritanceGraph.classes["Array"].methods["size"]; exists {
+			return method, "Array", true
+		}
+	}
+
 	// Start with the current class
 	current := className
+
+	// For array types, unwrap and check the Array class
+	if isArray {
+		// Look in Array class
+		if method, exists := sa.inheritanceGraph.classes["Array"].methods[methodName]; exists {
+			return method, "Array", true
+		}
+
+		// Then try Object
+		current = "Object"
+	}
 
 	// Walk up the inheritance hierarchy
 	for current != "" {
@@ -1545,11 +1799,23 @@ func (sa *SemanticAnalyser) collectInheritedMethods() {
 	}
 }
 
-// Improved type conformance check that handles SELF_TYPE properly
+// Improved type conformance check that handles array types properly
 func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
 	// Handle some common cases first for clarity
 	if type1 == type2 {
 		return true
+	}
+
+	// Special handling for array types - Arrays are invariant in Cool
+	isArray1, elemType1 := sa.parseArrayType(type1)
+	isArray2, elemType2 := sa.parseArrayType(type2)
+
+	if isArray1 && isArray2 {
+		// Arrays must have same element type for conformance
+		return elemType1 == elemType2
+	} else if isArray1 != isArray2 {
+		// One is array and one is not - only conforms if type2 is Object
+		return type2 == "Object"
 	}
 
 	// Handle SELF_TYPE special cases
@@ -1594,8 +1860,23 @@ func (sa *SemanticAnalyser) isTypeConformant(type1, type2 string) bool {
 	return false
 }
 
-// Improved least upper bound calculation that handles SELF_TYPE
+// Improved least upper bound calculation that handles array types
 func (sa *SemanticAnalyser) leastUpperBound(type1, type2 string) string {
+	// Handle array types
+	isArray1, elemType1 := sa.parseArrayType(type1)
+	isArray2, elemType2 := sa.parseArrayType(type2)
+
+	if isArray1 && isArray2 {
+		// If both are arrays, LUB is array of LUB of element types if they're the same
+		if elemType1 == elemType2 {
+			return type1 // Same array type
+		}
+		return "Object" // Different array types have Object as LUB
+	} else if isArray1 || isArray2 {
+		// If only one is array, LUB is Object
+		return "Object"
+	}
+
 	// Resolve SELF_TYPE to the current class
 	resolvedType1 := type1
 	resolvedType2 := type2

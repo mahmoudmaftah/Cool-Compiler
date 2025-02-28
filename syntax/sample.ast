@@ -1,0 +1,716 @@
+Program
+  Class: Vector inherits IO
+    Attribute: data : Array[Int]
+    Attribute: count : Int
+    Attribute: capacity : Int
+    Method: init
+      Formals:
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            Assignment: data
+              Unknown expression type: *ast.ArrayExpression
+            Assignment: capacity
+              Int: 8
+            Assignment: count
+              Int: 0
+            Identifier: self
+    Method: init_capacity
+      Formals:
+        initial_capacity: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            Assignment: data
+              Unknown expression type: *ast.ArrayExpression
+            Assignment: capacity
+              Identifier: initial_capacity
+            Assignment: count
+              Int: 0
+            Identifier: self
+    Method: size
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          Identifier: count
+    Method: front
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          If
+            Condition:
+              Binary: =
+                Identifier: count
+                Int: 0
+            Then:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Error: Vector is empty, cannot get front element\n"
+                Int: 0
+            Else:
+              Unknown expression type: *ast.ArrayAccessExpression
+    Method: get
+      Formals:
+        index: Int
+      Return Type: Int
+      Body:
+        Block
+          If
+            Condition:
+              Binary: <
+                Identifier: index
+                Int: 0
+            Then:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Error: Index cannot be negative\n"
+                Unary: ~
+                  Int: 1
+            Else:
+              If
+                Condition:
+                  Binary: <=
+                    Identifier: count
+                    Identifier: index
+                Then:
+                  Block
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Error: Index out of bounds\n"
+                    Unary: ~
+                      Int: 1
+                Else:
+                  Block
+                    Unknown expression type: *ast.ArrayAccessExpression
+    Method: set
+      Formals:
+        index: Int
+        value: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          If
+            Condition:
+              Binary: <
+                Identifier: index
+                Int: 0
+            Then:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Error: Index cannot be negative\n"
+                Identifier: self
+            Else:
+              If
+                Condition:
+                  Binary: <=
+                    Identifier: count
+                    Identifier: index
+                Then:
+                  Block
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Error: Index out of bounds\n"
+                    Identifier: self
+                Else:
+                  Block
+                    Assignment: data[index]
+                      Identifier: value
+                    Identifier: self
+    Method: push
+      Formals:
+        value: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Block
+            If
+              Condition:
+                Binary: =
+                  Identifier: count
+                  Identifier: capacity
+              Then:
+                Dispatch:
+                  Method: resize
+                  Arguments:
+                    Binary: *
+                      Identifier: capacity
+                      Int: 2
+              Else:
+                Identifier: self
+            Assignment: data[count]
+              Identifier: value
+            Assignment: count
+              Binary: +
+                Identifier: count
+                Int: 1
+            Identifier: self
+    Method: pop
+      Formals:
+      Return Type: Int
+      Body:
+        Block
+          Let
+            Binding: last_value: Int
+            In:
+              Block
+                If
+                  Condition:
+                    Binary: =
+                      Identifier: count
+                      Int: 0
+                  Then:
+                    Block
+                      Dispatch:
+                        Method: out_string
+                        Arguments:
+                          String: "Error: Vector is empty, cannot pop\n"
+                      Unary: ~
+                        Int: 1
+                  Else:
+                    Block
+                      Assignment: count
+                        Binary: -
+                          Identifier: count
+                          Int: 1
+                      Assignment: last_value
+                        Unknown expression type: *ast.ArrayAccessExpression
+                      If
+                        Condition:
+                          Binary: <
+                            Identifier: count
+                            Binary: /
+                              Identifier: capacity
+                              Int: 4
+                        Then:
+                          If
+                            Condition:
+                              Binary: <
+                                Identifier: capacity
+                                Int: 8
+                            Then:
+                              Identifier: self
+                            Else:
+                              Dispatch:
+                                Method: resize
+                                Arguments:
+                                  Binary: /
+                                    Identifier: capacity
+                                    Int: 2
+                        Else:
+                          Identifier: self
+                      Identifier: last_value
+    Method: resize
+      Formals:
+        new_capacity: Int
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Let
+            Binding: new_array: Array[Int]
+              Init:
+                Unknown expression type: *ast.ArrayExpression
+            Binding: i: Int
+              Init:
+                Int: 0
+            In:
+              Block
+                While
+                  Condition:
+                    Binary: <
+                      Identifier: i
+                      Identifier: count
+                  Body:
+                    Block
+                      Assignment: new_array[i]
+                        Unknown expression type: *ast.ArrayAccessExpression
+                      Assignment: i
+                        Binary: +
+                          Identifier: i
+                          Int: 1
+                Assignment: data
+                  Identifier: new_array
+                Assignment: capacity
+                  Identifier: new_capacity
+                Identifier: self
+    Method: print
+      Formals:
+      Return Type: SELF_TYPE
+      Body:
+        Block
+          Let
+            Binding: i: Int
+              Init:
+                Int: 0
+            In:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Vector["
+                While
+                  Condition:
+                    Binary: <
+                      Identifier: i
+                      Identifier: count
+                  Body:
+                    Block
+                      Dispatch:
+                        Method: out_int
+                        Arguments:
+                          Unknown expression type: *ast.ArrayAccessExpression
+                      If
+                        Condition:
+                          Binary: <
+                            Identifier: i
+                            Binary: -
+                              Identifier: count
+                              Int: 1
+                        Then:
+                          Dispatch:
+                            Method: out_string
+                            Arguments:
+                              String: ", "
+                        Else:
+                          Dispatch:
+                            Method: out_string
+                            Arguments:
+                              String: ""
+                      Assignment: i
+                        Binary: +
+                          Identifier: i
+                          Int: 1
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "]\n"
+                Identifier: self
+    Method: is_empty
+      Formals:
+      Return Type: Bool
+      Body:
+        Block
+          Binary: =
+            Identifier: count
+            Int: 0
+  Class: Main inherits IO
+    Method: main
+      Formals:
+      Return Type: Object
+      Body:
+        Block
+          Let
+            Binding: v: Vector
+              Init:
+                Dispatch:
+                  Object:
+                    New: Vector
+                  Method: init
+            Binding: result: Int
+            In:
+              Block
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Testing push operation:\n"
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 10
+                              Method: push
+                              Arguments:
+                                Int: 20
+                          Method: push
+                          Arguments:
+                            Int: 30
+                      Method: push
+                      Arguments:
+                        Int: 40
+                  Method: push
+                  Arguments:
+                    Int: 50
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 10
+                              Method: push
+                              Arguments:
+                                Int: 20
+                          Method: push
+                          Arguments:
+                            Int: 30
+                      Method: push
+                      Arguments:
+                        Int: 40
+                  Method: push
+                  Arguments:
+                    Int: 50
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 10
+                              Method: push
+                              Arguments:
+                                Int: 20
+                          Method: push
+                          Arguments:
+                            Int: 30
+                      Method: push
+                      Arguments:
+                        Int: 40
+                  Method: push
+                  Arguments:
+                    Int: 50
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: print
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Vector size: "
+                Dispatch:
+                  Method: out_int
+                  Arguments:
+                    Dispatch:
+                      Object:
+                        Identifier: v
+                      Method: size
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Front element: "
+                Assignment: result
+                  Dispatch:
+                    Object:
+                      Identifier: v
+                    Method: front
+                If
+                  Condition:
+                    Binary: =
+                      Dispatch:
+                        Object:
+                          Identifier: v
+                        Method: is_empty
+                      Bool: false
+                  Then:
+                    Dispatch:
+                      Method: out_int
+                      Arguments:
+                        Identifier: result
+                  Else:
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Error retrieving front element"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Element at position 2: "
+                Assignment: result
+                  Dispatch:
+                    Object:
+                      Identifier: v
+                    Method: get
+                    Arguments:
+                      Int: 1
+                Dispatch:
+                  Method: out_int
+                  Arguments:
+                    Identifier: result
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Setting index 1 to 99\n"
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: set
+                  Arguments:
+                    Int: 1
+                    Int: 99
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: print
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Popping last element: "
+                Assignment: result
+                  Dispatch:
+                    Object:
+                      Identifier: v
+                    Method: pop
+                If
+                  Condition:
+                    Binary: =
+                      Identifier: result
+                      Unary: ~
+                        Int: 1
+                  Then:
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Error popping element"
+                  Else:
+                    Dispatch:
+                      Method: out_int
+                      Arguments:
+                        Identifier: result
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\n"
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: print
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\nTesting error handling:\n"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Getting element at index 100: "
+                Assignment: result
+                  Dispatch:
+                    Object:
+                      Identifier: v
+                    Method: get
+                    Arguments:
+                      Int: 100
+                If
+                  Condition:
+                    Binary: =
+                      Identifier: result
+                      Unary: ~
+                        Int: 1
+                  Then:
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Error handled correctly\n"
+                  Else:
+                    Dispatch:
+                      Method: out_string
+                      Arguments:
+                        String: "Unexpected result\n"
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "\nTesting automatic resize by pushing more elements\n"
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 60
+                              Method: push
+                              Arguments:
+                                Int: 70
+                          Method: push
+                          Arguments:
+                            Int: 80
+                      Method: push
+                      Arguments:
+                        Int: 90
+                  Method: push
+                  Arguments:
+                    Int: 100
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 110
+                              Method: push
+                              Arguments:
+                                Int: 120
+                          Method: push
+                          Arguments:
+                            Int: 130
+                      Method: push
+                      Arguments:
+                        Int: 140
+                  Method: push
+                  Arguments:
+                    Int: 150
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 60
+                              Method: push
+                              Arguments:
+                                Int: 70
+                          Method: push
+                          Arguments:
+                            Int: 80
+                      Method: push
+                      Arguments:
+                        Int: 90
+                  Method: push
+                  Arguments:
+                    Int: 100
+                Dispatch:
+                  Object:
+                    Dispatch:
+                      Object:
+                        Dispatch:
+                          Object:
+                            Dispatch:
+                              Object:
+                                Dispatch:
+                                  Object:
+                                    Identifier: v
+                                  Method: push
+                                  Arguments:
+                                    Int: 110
+                              Method: push
+                              Arguments:
+                                Int: 120
+                          Method: push
+                          Arguments:
+                            Int: 130
+                      Method: push
+                      Arguments:
+                        Int: 140
+                  Method: push
+                  Arguments:
+                    Int: 150
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: print
+                Dispatch:
+                  Method: out_string
+                  Arguments:
+                    String: "Testing automatic resize by popping elements\n"
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: pop
+                Dispatch:
+                  Object:
+                    Identifier: v
+                  Method: print

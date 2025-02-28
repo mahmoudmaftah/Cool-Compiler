@@ -61,12 +61,17 @@ type CodeGenerator struct {
 	arrayElementTypes map[string]types.Type // Maps array class types to their element types
 	arrayTypeCache    map[string]types.Type // Cache for already created array types
 
-	// Optimization level
-	optimizationLevel int
-
 	// Error handling
 	errors []string
 	cFuncs map[string]*ir.Func
+
+	// Optimization flags
+	optimizationLevel       int
+	enableMemToReg          bool
+	enableCSE               bool
+	enableFunctionInlining  bool
+	enableLoopOptimizations bool
+	enableTailCallOpt       bool
 }
 
 // New creates a new, fully initialized code generator
@@ -87,6 +92,7 @@ func New() *CodeGenerator {
 		arrayElementTypes: make(map[string]types.Type),
 		arrayTypeCache:    make(map[string]types.Type), // Initialize array type cache
 		errors:            []string{},
+		optimizationLevel: 0, // Default to no optimization
 	}
 
 	// Initialize basic types
@@ -1605,56 +1611,56 @@ func (cg *CodeGenerator) findMethod(className, methodName string) *ir.Func {
 
 // generateWhileExpression generates LLVM IR for a while expression
 func (cg *CodeGenerator) generateWhileExpression(whileExpr *ast.WhileExpression) (value.Value, error) {
-    // Create unique names for blocks
-    funcName := cg.currentFunc.Name()
-    loopId := len(cg.currentFunc.Blocks)
+	// Create unique names for blocks
+	funcName := cg.currentFunc.Name()
+	loopId := len(cg.currentFunc.Blocks)
 
-    // Create blocks for the loop structure
-    headerBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.header.%s.%d", funcName, loopId))
-    bodyBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.body.%s.%d", funcName, loopId))
-    afterBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.after.%s.%d", funcName, loopId))
+	// Create blocks for the loop structure
+	headerBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.header.%s.%d", funcName, loopId))
+	bodyBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.body.%s.%d", funcName, loopId))
+	afterBlock := cg.currentFunc.NewBlock(fmt.Sprintf("while.after.%s.%d", funcName, loopId))
 
-    // Branch from current block to header block
-    cg.currentBlock.NewBr(headerBlock)
+	// Branch from current block to header block
+	cg.currentBlock.NewBr(headerBlock)
 
-    // Generate condition code in header block
-    cg.currentBlock = headerBlock
-    condValue, err := cg.generateExpression(whileExpr.Condition)
-    if err != nil {
-        return nil, fmt.Errorf("error generating while condition: %v", err)
-    }
+	// Generate condition code in header block
+	cg.currentBlock = headerBlock
+	condValue, err := cg.generateExpression(whileExpr.Condition)
+	if err != nil {
+		return nil, fmt.Errorf("error generating while condition: %v", err)
+	}
 
-    // Branch based on condition to either body or after
-    headerBlock.NewCondBr(condValue, bodyBlock, afterBlock)
+	// Branch based on condition to either body or after
+	headerBlock.NewCondBr(condValue, bodyBlock, afterBlock)
 
-    // Generate body code in body block
-    cg.currentBlock = bodyBlock
-    _, err = cg.generateExpression(whileExpr.Body)
-    if err != nil {
-        return nil, fmt.Errorf("error generating while body: %v", err)
-    }
+	// Generate body code in body block
+	cg.currentBlock = bodyBlock
+	_, err = cg.generateExpression(whileExpr.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error generating while body: %v", err)
+	}
 
-    // Remember the last block created during body generation
-    // This is important for nested control structures
-    bodyExitBlock := cg.currentBlock
+	// Remember the last block created during body generation
+	// This is important for nested control structures
+	bodyExitBlock := cg.currentBlock
 
-    // Check if the body exit block has a terminator
-    if bodyExitBlock.Term == nil {
-        // If not, add a branch back to the header block
-        bodyExitBlock.NewBr(headerBlock)
-    }
+	// Check if the body exit block has a terminator
+	if bodyExitBlock.Term == nil {
+		// If not, add a branch back to the header block
+		bodyExitBlock.NewBr(headerBlock)
+	}
 
-    // Set current block to after block for code that follows the loop
-    cg.currentBlock = afterBlock
+	// Set current block to after block for code that follows the loop
+	cg.currentBlock = afterBlock
 
-    // Make sure the after block has at least one instruction to avoid optimization issues
-    // Important: This creates a proper entry point for code following the loop
-    dummyAlloca := afterBlock.NewAlloca(types.I32)
-    afterBlock.NewStore(constant.NewInt(types.I32, 0), dummyAlloca)
+	// Make sure the after block has at least one instruction to avoid optimization issues
+	// Important: This creates a proper entry point for code following the loop
+	dummyAlloca := afterBlock.NewAlloca(types.I32)
+	afterBlock.NewStore(constant.NewInt(types.I32, 0), dummyAlloca)
 
-    // While loops always return void/null in Cool
-    objPtrType := types.NewPointer(cg.classTypes["Object"])
-    return constant.NewNull(objPtrType), nil
+	// While loops always return void/null in Cool
+	objPtrType := types.NewPointer(cg.classTypes["Object"])
+	return constant.NewNull(objPtrType), nil
 }
 
 // Placeholder stubs for remaining expression types
