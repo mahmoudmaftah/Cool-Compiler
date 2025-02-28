@@ -194,30 +194,24 @@ func (cg *CodeGenerator) Generate(program *ast.Program) (*ir.Module, error) {
 	if err := cg.createClassTypes(program); err != nil {
 		return nil, fmt.Errorf("error creating class types: %v", err)
 	}
-	fmt.Println("Class types created")
 
 	if err := cg.createMethodDeclarations(program); err != nil {
 		return nil, fmt.Errorf("error creating method declarations: %v", err)
 	}
-	fmt.Println("Method declarations created")
 
 	if err := cg.generateMethodImplementations(program); err != nil {
 		return nil, fmt.Errorf("error generating method implementations: %v", err)
 	}
-	fmt.Println("Method implementations generated")
 
 	if err := cg.generateEntryPoint(); err != nil {
 		return nil, fmt.Errorf("error generating entry point: %v", err)
 	}
-	fmt.Println("Entry point generated")
 
 	cg.generateRuntimeLibrary()
-	fmt.Println("Runtime support generated")
 
 	if err := cg.optimizeModule(); err != nil {
 		return nil, fmt.Errorf("error optimizing module: %v", err)
 	}
-	fmt.Println("Module optimized")
 
 	return cg.Module, nil
 }
@@ -381,7 +375,6 @@ func (cg *CodeGenerator) createClassTypes(program *ast.Program) error {
 
 	// First pass: create forward declarations for all classes
 	for _, class := range program.Classes {
-		fmt.Println("Class Naaaaaaame: ", class.Name.Value)
 		className := class.Name.Value
 
 		// Skip if already defined (basic classes)
@@ -471,7 +464,6 @@ func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 	// First pass: create vtable types for each class (forward declaration)
 
 	for className, _ := range cg.classTypes {
-		fmt.Println("Creating vtable for class XX      : ", className)
 		// skip array
 		if className == "Array" {
 			continue
@@ -494,7 +486,6 @@ func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 		for _, feature := range class.Features {
 			if method, ok := feature.(*ast.Method); ok {
 				// print method name
-				fmt.Println("Method Name: ", method.Name.Value)
 				methodName := method.Name.Value
 
 				// Create function declaration
@@ -604,7 +595,6 @@ func (cg *CodeGenerator) createVTableConstant(className string, methods []method
 	if className == "Array" {
 		return
 	}
-	fmt.Println("Creating vtable for class      : ", className)
 	initializers := []constant.Constant{}
 
 	for _, methodInfo := range methods {
@@ -699,13 +689,10 @@ func (cg *CodeGenerator) generateMethodImplementations(program *ast.Program) err
 			continue
 		}
 
-		fmt.Println("STARTING ...")
-
 		// Generate method implementations
 		for _, feature := range class.Features {
 			if method, ok := feature.(*ast.Method); ok {
 				// print method name
-				fmt.Println("Method Name: ", method.Name.Value)
 				err := cg.generateMethodImplementation(className, method)
 				if err != nil {
 					return fmt.Errorf("error generating method implementation for %s.%s: %v",
@@ -809,7 +796,6 @@ func (cg *CodeGenerator) ensureBlockTerminator(block *ir.Block) {
 }
 
 func (cg *CodeGenerator) generateIfExpression(ifExpr *ast.IfExpression) (value.Value, error) {
-	fmt.Println("Generating If Expression")
 	// Get the current function name for unique block naming
 	funcName := cg.currentFunc.Name()
 	ifId := len(cg.currentFunc.Blocks)
@@ -2175,8 +2161,6 @@ func (cg *CodeGenerator) generateMethodImplementation(className string, method *
 		// Allocate stack space for the formal parameter
 		paramType := cg.currentFunc.Params[i+1].Type()
 		// print formal and its type
-		fmt.Println("====================================")
-		fmt.Println(formal.Name.Value, paramType)
 		paramAlloca := entry.NewAlloca(paramType)
 
 		// Store the parameter value
@@ -2186,7 +2170,6 @@ func (cg *CodeGenerator) generateMethodImplementation(className string, method *
 		cg.variables[formal.Name.Value] = paramAlloca
 	}
 
-	fmt.Println("Generating body ...")
 	// Generate code for method body
 	returnValue, err := cg.generateExpression(method.Body)
 	if err != nil {

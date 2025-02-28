@@ -363,7 +363,6 @@ func (p *Parser) parseMethod() *ast.Method {
 	}
 	method.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 	// print method name
-	fmt.Println(method.Name.Value)
 
 	// Parse opening parenthesis
 	if !p.expectAndPeek(lexer.LPAREN) {
@@ -389,8 +388,6 @@ func (p *Parser) parseMethod() *ast.Method {
 		}
 	}
 
-	// fmt.Println("fomals parsed")
-
 	// Parse closing parenthesis
 	if !p.expectAndPeek(lexer.RPAREN) {
 		return nil
@@ -414,10 +411,6 @@ func (p *Parser) parseMethod() *ast.Method {
 
 	// Parse method body as a block expression
 	method.Body = p.parseBlockExpression()
-
-	if method.Body == nil {
-		fmt.Println("Failed")
-	}
 
 	// read the rbrace
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -560,33 +553,6 @@ func (p *Parser) parseAssignmentExpression(left ast.Expression) ast.Expression {
 	return expr
 }
 
-// func (p *Parser) parseIfExpression() ast.Expression {
-// 	expression := &ast.IfExpression{Token: p.curToken}
-
-// 	p.nextToken() // Move past 'if'
-// 	expression.Condition = p.parseExpression(LOWEST)
-
-// 	if !p.expectAndPeek(lexer.THEN) {
-// 		return nil
-// 	}
-
-// 	p.nextToken() // Move past 'then'
-// 	expression.Consequence = p.parseExpression(LOWEST)
-
-// 	if !p.expectAndPeek(lexer.ELSE) {
-// 		return nil
-// 	}
-
-// 	p.nextToken() // Move past 'else'
-// 	expression.Alternative = p.parseExpression(LOWEST)
-
-// 	if !p.expectAndPeek(lexer.FI) {
-// 		return nil
-// 	}
-
-// 	return expression
-// }
-
 func (p *Parser) parseIfExpression() ast.Expression {
 	expression := &ast.IfExpression{Token: p.curToken}
 
@@ -643,36 +609,6 @@ func (p *Parser) parseIfExpression() ast.Expression {
 
 	return expression
 }
-
-// func (p *Parser) parseWhileExpression() ast.Expression {
-// 	// fmt.Println("Parsing while expression")
-// 	expression := &ast.WhileExpression{Token: p.curToken}
-
-// 	p.nextToken() // Move past 'while'
-// 	expression.Condition = p.parseExpression(LOWEST)
-
-// 	if !p.expectAndPeek(lexer.LOOP) {
-// 		return nil
-// 	}
-
-// 	p.nextToken() // Move past 'loop'
-
-// 	// Parse the body expression
-// 	if p.curTokenIs(lexer.LBRACE) {
-// 		expression.Body = p.parseBlockExpression()
-// 	} else {
-// 		expression.Body = p.parseExpression(LOWEST)
-// 	}
-
-// 	if !p.expectAndPeek(lexer.POOL) {
-// 		p.errors = append(p.errors, fmt.Sprintf(
-// 			"Expected 'pool' at line %d col %d, got %s",
-// 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
-// 		return nil
-// 	}
-
-// 	return expression
-// }
 
 func (p *Parser) parseWhileExpression() ast.Expression {
 	expression := &ast.WhileExpression{Token: p.curToken}
