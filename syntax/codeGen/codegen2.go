@@ -105,6 +105,8 @@ func New() *CodeGenerator {
 	cg.initializeBasicClasses()
 	cg.initializeTypeSystem()
 
+	cg.setupArrayExtension()
+
 	return cg
 }
 
@@ -458,6 +460,7 @@ func (cg *CodeGenerator) fillClassType(className string, class *ast.Class) error
 // createMethodDeclarations creates LLVM function declarations for all methods
 func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 	// First pass: create vtable types for each class (forward declaration)
+	
 	for className, _ := range cg.classTypes {
 		cg.vtables[className] = types.NewStruct()
 		cg.Module.NewTypeDef(className+"_vtable", cg.vtables[className])
@@ -475,6 +478,8 @@ func (cg *CodeGenerator) createMethodDeclarations(program *ast.Program) error {
 		// Create declarations for all methods in this class
 		for _, feature := range class.Features {
 			if method, ok := feature.(*ast.Method); ok {
+				// print method name
+				fmt.Println("Method Name: ", method.Name.Value)
 				methodName := method.Name.Value
 
 				// Create function declaration
@@ -917,92 +922,92 @@ func safeNewNull(t types.Type) value.Value {
 	return constant.NewInt(types.I32, 0)
 }
 
-func (cg *CodeGenerator) generateMethodImplementation(className string, method *ast.Method) error {
-	methodName := method.Name.Value
+// func (cg *CodeGenerator) generateMethodImplementation(className string, method *ast.Method) error {
+// 	methodName := method.Name.Value
 
-	// Set current context
-	cg.currentClass = className
-	cg.currentMethod = methodName
-	cg.currentFunc = cg.methods[className][methodName]
-	cg.variables = make(map[string]value.Value) // Clear local variables
+// 	// Set current context
+// 	cg.currentClass = className
+// 	cg.currentMethod = methodName
+// 	cg.currentFunc = cg.methods[className][methodName]
+// 	cg.variables = make(map[string]value.Value) // Clear local variables
 
-	// Create entry block
-	entry := cg.currentFunc.NewBlock("entry")
-	cg.currentBlock = entry
+// 	// Create entry block
+// 	entry := cg.currentFunc.NewBlock("entry")
+// 	cg.currentBlock = entry
 
-	// Add formal parameters to variables map
-	selfParam := cg.currentFunc.Params[0]
-	cg.variables["self"] = selfParam
+// 	// Add formal parameters to variables map
+// 	selfParam := cg.currentFunc.Params[0]
+// 	cg.variables["self"] = selfParam
 
-	for i, formal := range method.Formals {
-		// Allocate stack space for the formal parameter
-		paramType := cg.currentFunc.Params[i+1].Type()
-		paramAlloca := entry.NewAlloca(paramType)
+// 	for i, formal := range method.Formals {
+// 		// Allocate stack space for the formal parameter
+// 		paramType := cg.currentFunc.Params[i+1].Type()
+// 		paramAlloca := entry.NewAlloca(paramType)
 
-		// Store the parameter value
-		entry.NewStore(cg.currentFunc.Params[i+1], paramAlloca)
+// 		// Store the parameter value
+// 		entry.NewStore(cg.currentFunc.Params[i+1], paramAlloca)
 
-		// Add to variables map
-		cg.variables[formal.Name.Value] = paramAlloca
-	}
+// 		// Add to variables map
+// 		cg.variables[formal.Name.Value] = paramAlloca
+// 	}
 
-	// Generate code for method body
-	returnValue, err := cg.generateExpression(method.Body)
-	if err != nil {
-		return fmt.Errorf("error generating method body: %v", err)
-	}
+// 	// Generate code for method body
+// 	returnValue, err := cg.generateExpression(method.Body)
+// 	if err != nil {
+// 		return fmt.Errorf("error generating method body: %v", err)
+// 	}
 
-	// Get the expected return type from the function definition
-	expectedReturnType := cg.currentFunc.Sig.RetType
+// 	// Get the expected return type from the function definition
+// 	expectedReturnType := cg.currentFunc.Sig.RetType
 
-	// Check all blocks in the function
-	for _, block := range cg.currentFunc.Blocks {
-		// If a block doesn't have a terminator, we need to add one
-		if block.Term == nil {
-			if block == cg.currentBlock {
-				// For the current block, add a return with the return value
-				if returnValue == nil {
-					// For nil return values (void result), create a proper null of expected type
-					if ptrType, ok := expectedReturnType.(*types.PointerType); ok {
-						returnValue = constant.NewNull(ptrType)
-					} else if intType, ok := expectedReturnType.(*types.IntType); ok {
-						returnValue = constant.NewInt(intType, 0)
-					} else {
-						// Default zero value
-						returnValue = constant.NewZeroInitializer(expectedReturnType)
-					}
-				} else if returnValue.Type() != expectedReturnType {
-					// Need to cast to the expected return type
-					if isPtrType(expectedReturnType) && isPtrType(returnValue.Type()) {
-						// Cast between pointer types
-						returnValue = block.NewBitCast(returnValue, expectedReturnType)
-					} else if isIntType(expectedReturnType) && isIntType(returnValue.Type()) {
-						// Convert between integer types
-						if expectedReturnType.(*types.IntType).BitSize > returnValue.Type().(*types.IntType).BitSize {
-							returnValue = block.NewSExt(returnValue, expectedReturnType)
-						} else {
-							returnValue = block.NewTrunc(returnValue, expectedReturnType)
-						}
-					} else {
-						// Other type conversion
-						returnValue = block.NewBitCast(returnValue, expectedReturnType)
-					}
-				}
+// 	// Check all blocks in the function
+// 	for _, block := range cg.currentFunc.Blocks {
+// 		// If a block doesn't have a terminator, we need to add one
+// 		if block.Term == nil {
+// 			if block == cg.currentBlock {
+// 				// For the current block, add a return with the return value
+// 				if returnValue == nil {
+// 					// For nil return values (void result), create a proper null of expected type
+// 					if ptrType, ok := expectedReturnType.(*types.PointerType); ok {
+// 						returnValue = constant.NewNull(ptrType)
+// 					} else if intType, ok := expectedReturnType.(*types.IntType); ok {
+// 						returnValue = constant.NewInt(intType, 0)
+// 					} else {
+// 						// Default zero value
+// 						returnValue = constant.NewZeroInitializer(expectedReturnType)
+// 					}
+// 				} else if returnValue.Type() != expectedReturnType {
+// 					// Need to cast to the expected return type
+// 					if isPtrType(expectedReturnType) && isPtrType(returnValue.Type()) {
+// 						// Cast between pointer types
+// 						returnValue = block.NewBitCast(returnValue, expectedReturnType)
+// 					} else if isIntType(expectedReturnType) && isIntType(returnValue.Type()) {
+// 						// Convert between integer types
+// 						if expectedReturnType.(*types.IntType).BitSize > returnValue.Type().(*types.IntType).BitSize {
+// 							returnValue = block.NewSExt(returnValue, expectedReturnType)
+// 						} else {
+// 							returnValue = block.NewTrunc(returnValue, expectedReturnType)
+// 						}
+// 					} else {
+// 						// Other type conversion
+// 						returnValue = block.NewBitCast(returnValue, expectedReturnType)
+// 					}
+// 				}
 
-				// Add return with the value
-				block.NewRet(returnValue)
-			} else {
-				// For other blocks with no terminator, add an unreachable instruction
-				// as a fallback for static analysis, but log a warning
-				fmt.Printf("Warning: Block %s in function %s has no terminator, adding unreachable\n",
-					block.Name(), cg.currentFunc.Name())
-				block.NewUnreachable()
-			}
-		}
-	}
+// 				// Add return with the value
+// 				block.NewRet(returnValue)
+// 			} else {
+// 				// For other blocks with no terminator, add an unreachable instruction
+// 				// as a fallback for static analysis, but log a warning
+// 				fmt.Printf("Warning: Block %s in function %s has no terminator, adding unreachable\n",
+// 					block.Name(), cg.currentFunc.Name())
+// 				block.NewUnreachable()
+// 			}
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // generateEntryPoint generates the main function as entry point
 func (cg *CodeGenerator) generateEntryPoint() error {
@@ -1034,43 +1039,64 @@ func (cg *CodeGenerator) generateEntryPoint() error {
 }
 
 // generateNewObject generates code to create a new object of the given class
+// func (cg *CodeGenerator) generateNewObject(block *ir.Block, className string) value.Value {
+// 	classType, exists := cg.classTypes[className]
+// 	if !exists {
+// 		panic(fmt.Sprintf("Class %s not found", className))
+// 	}
+
+// 	// Calculate object size (size of the class struct)
+// 	// A proper implementation would calculate exact size
+// 	sizeOfClass := constant.NewInt(types.I64, 64) // Approximation
+
+// 	// Call GC_malloc
+// 	rawPtr := block.NewCall(cg.runtimeFuncs["GC_malloc"], sizeOfClass)
+
+// 	// Cast to object type
+// 	objPtr := block.NewBitCast(rawPtr, types.NewPointer(classType))
+
+// 	// Initialize vtable pointer - get the global vtable
+// 	vtableGlobal, exists := cg.vtableGlobals[className]
+// 	if !exists {
+// 		panic(fmt.Sprintf("Vtable for class %s not found", className))
+// 	}
+
+// 	// Get pointer to vtable field in object
+// 	vtablePtr := block.NewGetElementPtr(
+// 		classType,
+// 		objPtr,
+// 		constant.NewInt(types.I32, 0),
+// 		constant.NewInt(types.I32, 0), // First field is vtable pointer
+// 	)
+
+// 	// The vtable field is a pointer to void, but we need to store a pointer to the vtable
+// 	// Cast the vtable global to the right type before storing
+// 	vtablePtrType := vtablePtr.Type().(*types.PointerType)
+// 	castedVtable := block.NewBitCast(vtableGlobal, vtablePtrType.ElemType)
+// 	block.NewStore(castedVtable, vtablePtr)
+
+// 	// Initialize other fields with defaults
+// 	cg.initializeObjectFields(block, objPtr, className)
+
+// 	return objPtr
+// }
+
 func (cg *CodeGenerator) generateNewObject(block *ir.Block, className string) value.Value {
 	classType, exists := cg.classTypes[className]
 	if !exists {
 		panic(fmt.Sprintf("Class %s not found", className))
 	}
 
-	// Calculate object size (size of the class struct)
-	// A proper implementation would calculate exact size
-	sizeOfClass := constant.NewInt(types.I64, 64) // Approximation
+	// Calculate object size
+	sizeOfClass := constant.NewInt(types.I64, 64) // Approximation or could calculate exact size
 
-	// Call GC_malloc
+	// Call memory allocation
 	rawPtr := block.NewCall(cg.runtimeFuncs["GC_malloc"], sizeOfClass)
 
 	// Cast to object type
 	objPtr := block.NewBitCast(rawPtr, types.NewPointer(classType))
 
-	// Initialize vtable pointer - get the global vtable
-	vtableGlobal, exists := cg.vtableGlobals[className]
-	if !exists {
-		panic(fmt.Sprintf("Vtable for class %s not found", className))
-	}
-
-	// Get pointer to vtable field in object
-	vtablePtr := block.NewGetElementPtr(
-		classType,
-		objPtr,
-		constant.NewInt(types.I32, 0),
-		constant.NewInt(types.I32, 0), // First field is vtable pointer
-	)
-
-	// The vtable field is a pointer to void, but we need to store a pointer to the vtable
-	// Cast the vtable global to the right type before storing
-	vtablePtrType := vtablePtr.Type().(*types.PointerType)
-	castedVtable := block.NewBitCast(vtableGlobal, vtablePtrType.ElemType)
-	block.NewStore(castedVtable, vtablePtr)
-
-	// Initialize other fields with defaults
+	// Initialize object fields including vtable
 	cg.initializeObjectFields(block, objPtr, className)
 
 	return objPtr
@@ -1169,6 +1195,10 @@ func (cg *CodeGenerator) generateExpression(expr ast.Expression) (value.Value, e
 		return cg.generateBinaryExpression(e)
 	case *ast.UnaryExpression:
 		return cg.generateUnaryExpression(e)
+	case *ast.ArrayExpression:
+		return cg.generateArrayExpression(e)
+	case *ast.ArrayAccessExpression:
+		return cg.generateArrayAccessExpression(e)
 	case *ast.BlockExpression:
 		return cg.generateBlockExpression(e)
 	case *ast.IfExpression:
@@ -1186,6 +1216,63 @@ func (cg *CodeGenerator) generateExpression(expr ast.Expression) (value.Value, e
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
 	}
+}
+
+func (cg *CodeGenerator) generateArrayExpression(expr *ast.ArrayExpression) (value.Value, error) {
+	// Extract array type
+	arrayTypeStr := expr.Type.Value
+
+	// Get element type and type tag
+	elemType, typeTag, err := cg.getArrayElementType(arrayTypeStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate size expression
+	sizeValue, err := cg.generateExpression(expr.Size)
+	if err != nil {
+		return nil, fmt.Errorf("error generating array size: %v", err)
+	}
+
+	// Determine element size
+	var elemSize value.Value
+	switch elemType {
+	case cg.intType: // Int
+		elemSize = constant.NewInt(types.I32, 4)
+	case cg.boolType: // Bool
+		elemSize = constant.NewInt(types.I32, 1)
+	default: // String, Object or class types (all pointers)
+		elemSize = constant.NewInt(types.I32, 8)
+	}
+
+	// Call array initialization function
+	return cg.currentBlock.NewCall(
+		cg.runtimeFuncs["Array_new"],
+		elemSize,
+		sizeValue,
+		constant.NewInt(types.I8, int64(typeTag)),
+	), nil
+}
+
+func (cg *CodeGenerator) generateArrayAccessExpression(expr *ast.ArrayAccessExpression) (value.Value, error) {
+	// Generate array expression
+	arrayPtr, err := cg.generateExpression(expr.Array)
+	if err != nil {
+		return nil, fmt.Errorf("error generating array: %v", err)
+	}
+
+	// Generate index expression
+	indexValue, err := cg.generateExpression(expr.Index)
+	if err != nil {
+		return nil, fmt.Errorf("error generating index: %v", err)
+	}
+
+	// Call get element function
+	return cg.currentBlock.NewCall(
+		cg.runtimeFuncs["Array_get_element"],
+		arrayPtr,
+		indexValue,
+	), nil
 }
 
 // generateIntegerLiteral generates LLVM IR for an integer literal
@@ -1227,43 +1314,6 @@ func (cg *CodeGenerator) generateBooleanLiteral(boolLit *ast.BooleanLiteral) (va
 		boolValue = 1
 	}
 	return constant.NewInt(types.I1, int64(boolValue)), nil
-}
-
-// generateObjectIdentifier generates LLVM IR for an object identifier
-func (cg *CodeGenerator) generateObjectIdentifier(obj *ast.ObjectIdentifier) (value.Value, error) {
-	varName := obj.Value
-
-	// Check if it's a local variable
-	if varVal, exists := cg.variables[varName]; exists {
-		// If it's a pointer to a stack variable, load it
-		if _, ok := varVal.Type().(*types.PointerType); ok {
-			return cg.currentBlock.NewLoad(varVal.Type().(*types.PointerType).ElemType, varVal), nil
-		}
-		return varVal, nil
-	}
-
-	// Check if it's a class attribute
-	attrKey := cg.currentClass + "." + varName
-	if attrIndex, exists := cg.attrs[attrKey]; exists {
-		// Load self pointer
-		selfPtr := cg.variables["self"]
-
-		// Get attribute address
-		attrPtr := cg.currentBlock.NewGetElementPtr(
-			cg.classTypes[cg.currentClass],
-			selfPtr,
-			constant.NewInt(types.I32, 0),
-			constant.NewInt(types.I32, int64(attrIndex)),
-		)
-
-		// Get pointer type and element type
-		ptrType := attrPtr.Type().(*types.PointerType)
-
-		// Load attribute value
-		return cg.currentBlock.NewLoad(ptrType.ElemType, attrPtr), nil
-	}
-
-	return nil, fmt.Errorf("undefined identifier: %s", varName)
 }
 
 // generateAssignment generates LLVM IR for an assignment
@@ -1347,6 +1397,7 @@ func (cg *CodeGenerator) generateAssignment(assign *ast.Assignment) (value.Value
 }
 
 // generateBinaryExpression generates LLVM IR for a binary expression
+// Modified generateBinaryExpression to properly handle string concatenation
 func (cg *CodeGenerator) generateBinaryExpression(binary *ast.BinaryExpression) (value.Value, error) {
 	// Generate left and right operands
 	left, err := cg.generateExpression(binary.Left)
@@ -1362,6 +1413,18 @@ func (cg *CodeGenerator) generateBinaryExpression(binary *ast.BinaryExpression) 
 	// Perform operation based on operator
 	switch binary.Operator {
 	case "+":
+		// Check if either operand is a string - if so, we need string concatenation
+		if isStringType(left.Type()) || isStringType(right.Type()) {
+			// Strings must be concatenated using the string_concat runtime function
+			// Ensure both operands are properly cast to char*
+			leftStr := cg.ensureStringType(cg.currentBlock, left)
+			rightStr := cg.ensureStringType(cg.currentBlock, right)
+
+			// Call the string_concat runtime function
+			return cg.currentBlock.NewCall(cg.runtimeFuncs["string_concat"], leftStr, rightStr), nil
+		}
+
+		// Normal integer addition
 		return cg.currentBlock.NewAdd(left, right), nil
 	case "-":
 		return cg.currentBlock.NewSub(left, right), nil
@@ -1378,6 +1441,58 @@ func (cg *CodeGenerator) generateBinaryExpression(binary *ast.BinaryExpression) 
 	default:
 		return nil, fmt.Errorf("unsupported binary operator: %s", binary.Operator)
 	}
+}
+
+// Helper function to check if a type is a string type
+func isStringType(t types.Type) bool {
+	// Check if it's a pointer to i8 (char*)
+	if ptrType, ok := t.(*types.PointerType); ok {
+		if byteType, ok := ptrType.ElemType.(*types.IntType); ok {
+			return byteType.BitSize == 8
+		}
+	}
+	return false
+}
+
+// Helper function to ensure a value is a string type
+func (cg *CodeGenerator) ensureStringType(block *ir.Block, val value.Value) value.Value {
+	// If it's already a string type, return it
+	if isStringType(val.Type()) {
+		return val
+	}
+
+	// For integers, create a string representation
+	if isIntType(val.Type()) {
+		// Create a format string
+		formatStr := cg.createStringConstant(block, "int_fmt", "%d")
+
+		// Call sprintf (via a temporary function) to convert int to string
+		// First allocate buffer for the string (20 chars is enough for most integers)
+		bufSize := constant.NewInt(types.I64, 20)
+		buffer := block.NewCall(cg.runtimeFuncs["GC_malloc"], bufSize)
+
+		// Get the sprintf function (declare it if not already declared)
+		var sprintfFunc *ir.Func
+		if existingFunc, exists := cg.cFuncs["sprintf"]; exists {
+			sprintfFunc = existingFunc
+		} else {
+			// Declare sprintf
+			sprintfFunc = cg.Module.NewFunc("sprintf", types.I32,
+				ir.NewParam("str", types.NewPointer(types.I8)),
+				ir.NewParam("format", types.NewPointer(types.I8)))
+			sprintfFunc.Sig.Variadic = true
+			sprintfFunc.Linkage = enum.LinkageExternal
+			cg.cFuncs["sprintf"] = sprintfFunc
+		}
+
+		// Call sprintf to convert the integer to a string
+		block.NewCall(sprintfFunc, buffer, formatStr, val)
+
+		return buffer
+	}
+
+	// For other types, return a placeholder string
+	return cg.createStringConstant(block, "default", "(not a string)")
 }
 
 // Helper to access a field in an object
@@ -1928,4 +2043,156 @@ func (cg *CodeGenerator) initializeBasicClasses() {
 	cg.methods["String"]["concat"] = cg.runtimeFuncs["string_concat"]
 	cg.methods["String"]["length"] = cg.runtimeFuncs["string_length"]
 	cg.methods["String"]["substr"] = cg.runtimeFuncs["string_substr"]
+}
+
+func (cg *CodeGenerator) generateMethodImplementation(className string, method *ast.Method) error {
+	methodName := method.Name.Value
+
+	// Set current context
+	cg.currentClass = className
+	cg.currentMethod = methodName
+	cg.currentFunc = cg.methods[className][methodName]
+	cg.variables = make(map[string]value.Value) // Clear local variables
+
+	// Create entry block
+	entry := cg.currentFunc.NewBlock("entry")
+	cg.currentBlock = entry
+
+	// Add formal parameters to variables map
+	selfParam := cg.currentFunc.Params[0]
+	cg.variables["self"] = selfParam
+
+	for i, formal := range method.Formals {
+		// Allocate stack space for the formal parameter
+		paramType := cg.currentFunc.Params[i+1].Type()
+		paramAlloca := entry.NewAlloca(paramType)
+
+		// Store the parameter value
+		entry.NewStore(cg.currentFunc.Params[i+1], paramAlloca)
+
+		// Add to variables map
+		cg.variables[formal.Name.Value] = paramAlloca
+	}
+
+	// Generate code for method body
+	returnValue, err := cg.generateExpression(method.Body)
+	if err != nil {
+		return fmt.Errorf("error generating method body: %v", err)
+	}
+
+	// Get the expected return type from the function definition
+	expectedReturnType := cg.currentFunc.Sig.RetType
+
+	// Special handling for SELF_TYPE return - ensure we're returning a pointer
+	if method.TypeDecl.Value == "SELF_TYPE" {
+		// If returnValue is null or not a pointer, use self directly
+		if returnValue == nil || !isPtrType(returnValue.Type()) {
+			returnValue = cg.variables["self"]
+		}
+	}
+
+	// Check all blocks in the function
+	for _, block := range cg.currentFunc.Blocks {
+		// If a block doesn't have a terminator, we need to add one
+		if block.Term == nil {
+			if block == cg.currentBlock {
+				// For the current block, add a return with the return value
+				if returnValue == nil {
+					// For nil return values (void result), create a proper null of expected type
+					if ptrType, ok := expectedReturnType.(*types.PointerType); ok {
+						returnValue = constant.NewNull(ptrType)
+					} else if intType, ok := expectedReturnType.(*types.IntType); ok {
+						returnValue = constant.NewInt(intType, 0)
+					} else {
+						// Default zero value
+						returnValue = constant.NewZeroInitializer(expectedReturnType)
+					}
+				} else if returnValue.Type() != expectedReturnType {
+					// Need to cast to the expected return type
+					if isPtrType(expectedReturnType) && isPtrType(returnValue.Type()) {
+						// Cast between pointer types
+						returnValue = block.NewBitCast(returnValue, expectedReturnType)
+					} else if isIntType(expectedReturnType) && isIntType(returnValue.Type()) {
+						// Convert between integer types
+						if expectedReturnType.(*types.IntType).BitSize > returnValue.Type().(*types.IntType).BitSize {
+							returnValue = block.NewSExt(returnValue, expectedReturnType)
+						} else {
+							returnValue = block.NewTrunc(returnValue, expectedReturnType)
+						}
+					} else {
+						// Other type conversion - be careful here
+						// Only cast between compatible types
+						if isPtrType(expectedReturnType) && !isPtrType(returnValue.Type()) {
+							// Can't cast non-pointer to pointer directly - this would cause the error
+							// Instead, use self as the return value for SELF_TYPE
+							if method.TypeDecl.Value == "SELF_TYPE" {
+								returnValue = cg.variables["self"]
+							} else {
+								// For other cases, try to load or store as appropriate
+								// This is complex and depends on the specific types involved
+								fmt.Printf("Warning: Incompatible types in return - expected %v, got %v\n",
+									expectedReturnType, returnValue.Type())
+								returnValue = constant.NewZeroInitializer(expectedReturnType)
+							}
+						} else {
+							// For other cases, attempt a bitcast between compatible types
+							returnValue = block.NewBitCast(returnValue, expectedReturnType)
+						}
+					}
+				}
+
+				// Add return with the value
+				block.NewRet(returnValue)
+			} else {
+				// For other blocks with no terminator, add an unreachable instruction
+				// as a fallback for static analysis, but log a warning
+				fmt.Printf("Warning: Block %s in function %s has no terminator, adding unreachable\n",
+					block.Name(), cg.currentFunc.Name())
+				block.NewUnreachable()
+			}
+		}
+	}
+
+	return nil
+}
+func (cg *CodeGenerator) generateObjectIdentifier(obj *ast.ObjectIdentifier) (value.Value, error) {
+	varName := obj.Value
+
+	// Special handling for 'self' when it might be returning from a SELF_TYPE method
+	if varName == "self" && cg.isMethodReturningSelfType(cg.currentClass, cg.currentMethod) {
+		// For SELF_TYPE methods, return the self pointer directly without loading
+		return cg.variables["self"], nil
+	}
+
+	// Check if it's a local variable
+	if varVal, exists := cg.variables[varName]; exists {
+		// If it's a pointer to a stack variable, load it
+		if _, ok := varVal.Type().(*types.PointerType); ok {
+			return cg.currentBlock.NewLoad(varVal.Type().(*types.PointerType).ElemType, varVal), nil
+		}
+		return varVal, nil
+	}
+
+	// Check if it's a class attribute
+	attrKey := cg.currentClass + "." + varName
+	if attrIndex, exists := cg.attrs[attrKey]; exists {
+		// Load self pointer
+		selfPtr := cg.variables["self"]
+
+		// Get attribute address
+		attrPtr := cg.currentBlock.NewGetElementPtr(
+			cg.classTypes[cg.currentClass],
+			selfPtr,
+			constant.NewInt(types.I32, 0),
+			constant.NewInt(types.I32, int64(attrIndex)),
+		)
+
+		// Get pointer type and element type
+		ptrType := attrPtr.Type().(*types.PointerType)
+
+		// Load attribute value
+		return cg.currentBlock.NewLoad(ptrType.ElemType, attrPtr), nil
+	}
+
+	return nil, fmt.Errorf("undefined identifier: %s", varName)
 }

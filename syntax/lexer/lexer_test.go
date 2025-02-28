@@ -95,7 +95,6 @@ func TestNextToken(t *testing.T) {
 			[]TokenType{OBJECTID, ASSIGN, INT_CONST, SEMI, EOF},
 			[]string{"x", "<-", "1", ";", ""},
 		},
-
 	}
 
 	for _, tt := range tests {

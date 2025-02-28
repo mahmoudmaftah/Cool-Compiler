@@ -9,8 +9,7 @@ import (
 
 type Precedence int
 
-// We will assign a precedence to each token type.
-// This will help us to know the order of operations when parsing expressions.
+// Operator precedence levels
 const (
 	START Precedence = iota
 	LOWEST
@@ -20,23 +19,25 @@ const (
 	SUM     // + -
 	PRODUCT // * /
 	PREFIX  // ~ not isvoid
+	INDEX   // array[index]
 	CALL    // method calls
 	HIGHEST
 )
 
-// Update precedences map
+// Update precedences map - Add INDEX precedence
 var precedences = map[lexer.TokenType]Precedence{
-	lexer.ASSIGN: ASSIGN,
-	lexer.EQ:     EQUALS,
-	lexer.LT:     COMPARE,
-	lexer.LE:     COMPARE,
-	lexer.PLUS:   SUM,
-	lexer.MINUS:  SUM,
-	lexer.TIMES:  PRODUCT,
-	lexer.DIVIDE: PRODUCT,
-	lexer.DOT:    CALL,
-	lexer.AT:     CALL,
-	lexer.LPAREN: CALL,
+	lexer.ASSIGN:   ASSIGN,
+	lexer.EQ:       EQUALS,
+	lexer.LT:       COMPARE,
+	lexer.LE:       COMPARE,
+	lexer.PLUS:     SUM,
+	lexer.MINUS:    SUM,
+	lexer.TIMES:    PRODUCT,
+	lexer.DIVIDE:   PRODUCT,
+	lexer.DOT:      CALL,
+	lexer.AT:       CALL,
+	lexer.LPAREN:   CALL,
+	lexer.LBRACKET: INDEX, // Array indexing - higher precedence than method calls
 }
 
 type (
@@ -70,7 +71,7 @@ func (p *Parser) curPrecedence() Precedence {
 	return LOWEST
 }
 
-// We also decided to add a few helper functions to make the code cleaner.
+// Helper functions
 
 // This function will register a prefix operator.
 func (p *Parser) registerPrefix(tokenType lexer.TokenType, fn prefixParseFn) {
@@ -112,7 +113,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.NOT, p.parseUnaryExpression)
 	p.registerPrefix(lexer.LBRACE, p.parseBlockExpression)
 
-	// Now we will register infix operators
+	// Register infix operators
 	p.registerInfix(lexer.PLUS, p.parseBinaryExpression)
 	p.registerInfix(lexer.MINUS, p.parseBinaryExpression)
 	p.registerInfix(lexer.TIMES, p.parseBinaryExpression)
@@ -122,8 +123,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.LE, p.parseBinaryExpression)
 	p.registerInfix(lexer.DOT, p.parseDispatchExpression)
 	p.registerInfix(lexer.AT, p.parseDispatchExpression)
-
-	// CRITICAL FIX: Use proper assignment expression parsing
+	p.registerInfix(lexer.LBRACKET, p.parseArrayAccessExpression)
 	p.registerInfix(lexer.ASSIGN, p.parseAssignmentExpression)
 
 	// Read two tokens, so curToken and peekToken are both set
@@ -169,17 +169,18 @@ func (p *Parser) expectCurrent(t lexer.TokenType) bool {
 }
 
 func (p *Parser) peekError(t lexer.TokenType) {
-	p.errors = append(p.errors, fmt.Sprintf("Expected next token to be %v, got %v line %d col %d", t, p.peekToken.Type, p.peekToken.Line, p.peekToken.Column))
+	p.errors = append(p.errors, fmt.Sprintf("Expected next token to be %v, got %v line %d col %d",
+		t, p.peekToken.Type, p.peekToken.Line, p.peekToken.Column))
 }
 
 func (p *Parser) currentError(t lexer.TokenType) {
-	p.errors = append(p.errors, fmt.Sprintf("Expected current token to be %v, got %v line %d col %d", t, p.curToken.Type, p.peekToken.Line, p.peekToken.Column))
+	p.errors = append(p.errors, fmt.Sprintf("Expected current token to be %v, got %v line %d col %d",
+		t, p.curToken.Type, p.curToken.Line, p.curToken.Column))
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
 	prog := &ast.Program{}
 	for p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.ERROR {
-
 		c := p.ParseClass()
 		if c == nil {
 			continue
@@ -192,7 +193,6 @@ func (p *Parser) ParseProgram() *ast.Program {
 		} else {
 			p.nextToken()
 		}
-		// fmt.Println(c.Name.Value)
 
 		prog.Classes = append(prog.Classes, c)
 	}
@@ -246,11 +246,9 @@ func (p *Parser) ParseClass() *ast.Class {
 			if p.curTokenIs(lexer.RBRACE) {
 				break
 			}
-
 		}
 	}
 
-	// fmt.Println("===================", p.curToken.Literal)
 	if !p.curTokenIs(lexer.RBRACE) {
 		p.errors = append(p.errors,
 			fmt.Sprintf("Expected } at end of class at line %d col %d, got %s",
@@ -270,6 +268,43 @@ func (p *Parser) parseFeature() ast.Feature {
 	return p.parseAttribute()
 }
 
+// parseTypeIdentifier handles both simple types and array types
+func (p *Parser) parseTypeIdentifier() *ast.TypeIdentifier {
+	if !p.curTokenIs(lexer.TYPEID) {
+		p.errors = append(p.errors,
+			fmt.Sprintf("Expected type identifier at line %d col %d, got %s",
+				p.curToken.Line, p.curToken.Column, p.curToken.Type))
+		return nil
+	}
+
+	typeId := &ast.TypeIdentifier{
+		Token: p.curToken,
+		Value: p.curToken.Literal,
+	}
+
+	// Check if this is an array type: Array[Type]
+	if typeId.Value == "Array" && p.peekTokenIs(lexer.LBRACKET) {
+		p.nextToken() // Move to '['
+
+		if !p.expectAndPeek(lexer.TYPEID) {
+			return nil
+		}
+
+		elemType := p.curToken.Literal
+
+		if !p.expectAndPeek(lexer.RBRACKET) {
+			return nil
+		}
+
+		// Update type identifier for Array type
+		typeId.IsArray = true
+		typeId.ElemType = elemType
+		typeId.Value = fmt.Sprintf("Array[%s]", elemType) // For display purposes
+	}
+
+	return typeId
+}
+
 // parseAttribute will have a name, a type and an optional init expression
 func (p *Parser) parseAttribute() *ast.Attribute {
 	attr := &ast.Attribute{Token: p.curToken}
@@ -283,10 +318,13 @@ func (p *Parser) parseAttribute() *ast.Attribute {
 		return nil
 	}
 
-	if !p.expectAndPeek(lexer.TYPEID) {
+	p.nextToken() // Move to type identifier
+
+	// Parse type (now handles array types)
+	attr.TypeDecl = p.parseTypeIdentifier()
+	if attr.TypeDecl == nil {
 		return nil
 	}
-	attr.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 	if p.peekTokenIs(lexer.ASSIGN) {
 		p.nextToken()
@@ -355,10 +393,11 @@ func (p *Parser) parseMethod() *ast.Method {
 		return nil
 	}
 
-	if !p.expectAndPeek(lexer.TYPEID) {
+	p.nextToken() // Move to type identifier
+	method.TypeDecl = p.parseTypeIdentifier()
+	if method.TypeDecl == nil {
 		return nil
 	}
-	method.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 	// Parse method body
 	if !p.expectAndPeek(lexer.LBRACE) {
@@ -391,59 +430,6 @@ func (p *Parser) parseMethod() *ast.Method {
 
 	return method
 }
-
-// Update parseIdentifier to handle method calls
-// func (p *Parser) parseIdentifier() ast.Expression {
-// 	expr := &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
-
-// 	fmt.Println("HERE")
-// 	// If next token is '(', this is a method call
-// 	if p.peekTokenIs(lexer.LPAREN) {
-// 		p.nextToken() // Move to '('
-
-// 		dispatch := &ast.DispatchExpression{
-// 			Token:     expr.Token,
-// 			Method:    &ast.ObjectIdentifier{Token: expr.Token, Value: expr.Value},
-// 			Arguments: []ast.Expression{},
-// 		}
-
-// 		// Check if the next token is ')', indicating an empty argument list
-// 		if p.peekTokenIs(lexer.RPAREN) {
-// 			fmt.Println("HERE")
-// 			p.nextToken() // Move to ')'
-// 			p.nextToken() // Move past ')'
-// 			return dispatch
-// 		}
-
-// 		// Otherwise, parse arguments
-// 		p.nextToken() // Move past '('
-
-// 		// Parse first argument
-// 		arg := p.parseExpression(LOWEST)
-// 		if arg != nil {
-// 			dispatch.Arguments = append(dispatch.Arguments, arg)
-// 		}
-
-// 		// Parse remaining arguments
-// 		for p.peekTokenIs(lexer.COMMA) {
-// 			p.nextToken() // Move to comma
-// 			p.nextToken() // Move past comma
-// 			arg = p.parseExpression(LOWEST)
-// 			if arg != nil {
-// 				dispatch.Arguments = append(dispatch.Arguments, arg)
-// 			}
-// 		}
-
-// 		// Ensure we end with a closing parenthesis
-// 		if !p.expectAndPeek(lexer.RPAREN) {
-// 			return nil
-// 		}
-
-// 		return dispatch
-// 	}
-
-// 	return expr
-// }
 
 func (p *Parser) parseFormals() []*ast.Formal {
 	var formals []*ast.Formal
@@ -490,11 +476,12 @@ func (p *Parser) parseFormal() *ast.Formal {
 		return nil
 	}
 
-	// Parse type
-	if !p.expectAndPeek(lexer.TYPEID) {
+	// Parse type (now handles array types)
+	p.nextToken() // Move to type
+	formal.TypeDecl = p.parseTypeIdentifier()
+	if formal.TypeDecl == nil {
 		return nil
 	}
-	formal.TypeDecl = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 	return formal
 }
@@ -519,13 +506,30 @@ func (p *Parser) parseExpression(precedence Precedence) ast.Expression {
 	return leftExp
 }
 
-// CRITICAL NEW FUNCTION: Handle assignment expressions properly
+// Handle assignment expressions properly
 func (p *Parser) parseAssignmentExpression(left ast.Expression) ast.Expression {
-	// Check if left is an ObjectIdentifier
+	// Handle array assignments like array[index] <- value
+	if access, ok := left.(*ast.ArrayAccessExpression); ok {
+		assign := &ast.Assignment{
+			Token: p.curToken,
+			Name:  &ast.ObjectIdentifier{Token: p.curToken, Value: fmt.Sprintf("%s[%s]", access.Array, access.Index)},
+			Value: nil,
+		}
+
+		// Move to the expression after the <- token
+		p.nextToken()
+
+		// Parse the value expression
+		assign.Value = p.parseExpression(ASSIGN)
+
+		return assign
+	}
+
+	// Check if left is an ObjectIdentifier for normal assignments
 	identifier, ok := left.(*ast.ObjectIdentifier)
 	if !ok {
 		p.errors = append(p.errors, fmt.Sprintf(
-			"Left side of assignment must be an identifier at line %d col %d",
+			"Left side of assignment must be an identifier or array access at line %d col %d",
 			p.curToken.Line, p.curToken.Column))
 		return nil
 	}
@@ -536,14 +540,11 @@ func (p *Parser) parseAssignmentExpression(left ast.Expression) ast.Expression {
 		Name:  identifier,
 	}
 
-	// Save the precedence
-	precedence := p.curPrecedence()
-
 	// Move to the expression after the <- token
 	p.nextToken()
 
 	// Parse the value expression
-	expr.Value = p.parseExpression(precedence)
+	expr.Value = p.parseExpression(ASSIGN)
 
 	return expr
 }
@@ -666,10 +667,11 @@ func (p *Parser) parseLetExpression() ast.Expression {
 			return nil
 		}
 
-		if !p.expectAndPeek(lexer.TYPEID) {
+		p.nextToken() // Move to type
+		binding.Type = p.parseTypeIdentifier()
+		if binding.Type == nil {
 			return nil
 		}
-		binding.Type = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 		if p.peekTokenIs(lexer.ASSIGN) {
 			p.nextToken() // move to <-
@@ -732,10 +734,11 @@ func (p *Parser) parseCaseExpression() ast.Expression {
 			return nil
 		}
 
-		if !p.expectAndPeek(lexer.TYPEID) {
+		p.nextToken() // Move to type
+		branch.Type = p.parseTypeIdentifier()
+		if branch.Type == nil {
 			return nil
 		}
-		branch.Type = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
 		if !p.expectAndPeek(lexer.DARROW) {
 			return nil
@@ -775,7 +778,11 @@ func (p *Parser) parseDispatchExpression(object ast.Expression) ast.Expression {
 			return nil
 		}
 
-		dispatch.StaticType = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+		// Handle array type in static dispatch
+		dispatch.StaticType = p.parseTypeIdentifier()
+		if dispatch.StaticType == nil {
+			return nil
+		}
 
 		// Expect and consume the '.'
 		if !p.expectAndPeek(lexer.DOT) {
@@ -788,6 +795,12 @@ func (p *Parser) parseDispatchExpression(object ast.Expression) ast.Expression {
 		return nil
 	}
 	dispatch.Method = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	// Special case for array.size() method
+	if dispatch.Method.Value == "size" && object != nil {
+		// We can determine if this is an array type during semantic analysis
+		// For now, just parse it normally
+	}
 
 	// Parse argument list
 	if !p.expectAndPeek(lexer.LPAREN) {
@@ -833,8 +846,6 @@ func (p *Parser) parseExpressionList(end lexer.TokenType) []ast.Expression {
 	return list
 }
 
-// Fix 2: Update parseIdentifier to remove the empty argument list special handling
-// and just rely on parseExpressionList
 func (p *Parser) parseIdentifier() ast.Expression {
 	expr := &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
 
@@ -889,6 +900,7 @@ func (p *Parser) parseBooleanLiteral() ast.Expression {
 	}
 }
 
+// Improved parseNewExpression to handle array type and size
 func (p *Parser) parseNewExpression() ast.Expression {
 	expr := &ast.NewExpression{Token: p.curToken}
 
@@ -896,7 +908,62 @@ func (p *Parser) parseNewExpression() ast.Expression {
 		return nil
 	}
 
-	expr.Type = &ast.TypeIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+	// Check if it's an array type
+	if p.curToken.Literal == "Array" {
+		// Check for opening bracket
+		if p.peekTokenIs(lexer.LBRACKET) {
+			p.nextToken() // Move to '['
+
+			if !p.expectAndPeek(lexer.TYPEID) {
+				return nil
+			}
+
+			elemType := p.curToken.Literal
+
+			if !p.expectAndPeek(lexer.RBRACKET) {
+				return nil
+			}
+
+			// Create type identifier for Array[Type]
+			typeId := &ast.TypeIdentifier{
+				Token:    expr.Token,
+				Value:    fmt.Sprintf("Array[%s]", elemType),
+				IsArray:  true,
+				ElemType: elemType,
+			}
+
+			// Check for array size parameter
+			if p.peekTokenIs(lexer.LPAREN) {
+				p.nextToken() // Move to '('
+				p.nextToken() // Move past '('
+
+				// Parse array size expression
+				sizeExpr := p.parseExpression(LOWEST)
+
+				// Check for closing parenthesis
+				if !p.expectAndPeek(lexer.RPAREN) {
+					return nil
+				}
+
+				// Create array expression with size
+				return &ast.ArrayExpression{
+					Token: expr.Token,
+					Type:  typeId,
+					Size:  sizeExpr,
+				}
+			}
+
+			// Set the type for a normal new expression (no size specified)
+			expr.Type = typeId
+			return expr
+		}
+	}
+
+	// Regular new expression for non-array types
+	expr.Type = &ast.TypeIdentifier{
+		Token: p.curToken,
+		Value: p.curToken.Literal,
+	}
 	return expr
 }
 
@@ -931,6 +998,25 @@ func (p *Parser) parseBinaryExpression(left ast.Expression) ast.Expression {
 	precedence := p.curPrecedence()
 	p.nextToken()
 	expr.Right = p.parseExpression(precedence)
+
+	return expr
+}
+
+// Improved parseArrayAccessExpression for array indexing
+func (p *Parser) parseArrayAccessExpression(array ast.Expression) ast.Expression {
+	expr := &ast.ArrayAccessExpression{
+		Token: p.curToken,
+		Array: array,
+	}
+
+	p.nextToken() // Move past '['
+
+	// Parse index expression
+	expr.Index = p.parseExpression(LOWEST)
+
+	if !p.expectAndPeek(lexer.RBRACKET) {
+		return nil
+	}
 
 	return expr
 }

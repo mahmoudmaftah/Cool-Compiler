@@ -11,6 +11,9 @@ import (
 
 type TokenType int
 
+// Add near the top where other token types are defined
+
+// The list of token types
 // The list of token types
 const (
 	EOF TokenType = iota
@@ -45,31 +48,33 @@ const (
 	OBJECTID
 
 	// Operators
-	ASSIGN // <-
-	DARROW // =>
-	LT     // <
-	LE     // <=
-	EQ     // =
-	PLUS   // +
-	MINUS  // -
-	TIMES  // *
-	DIVIDE // /
-	LPAREN // (
-	RPAREN // )
-	LBRACE // {
-	RBRACE // }
-	SEMI   // ;
-	COLON  // :
-	COMMA  // ,
-	DOT    // .
-	AT     // @
-	NEG    // ~
+	ASSIGN   // <-
+	DARROW   // =>
+	LT       //
+	LE       // <=
+	EQ       // =
+	PLUS     // +
+	MINUS    // -
+	TIMES    // *
+	DIVIDE   // /
+	LPAREN   // (
+	RPAREN   // )
+	LBRACE   // {
+	RBRACE   // }
+	SEMI     // ;
+	COLON    // :
+	COMMA    // ,
+	DOT      // .
+	AT       // @
+	NEG      // ~
+	LBRACKET // [
+	RBRACKET // ]
 )
 
 func (tt TokenType) String() string {
 	return [...]string{"EOF", "ERROR", "CLASS", "INHERITS", "ISVOID", "IF", "ELSE", "FI", "THEN", "LET", "IN", "WHILE", "CASE", "ESCA", "LOOP", "POOL",
 		"NEW", "OF", "NOT", "STR_CONST", "BOOL_CONST", "INT_CONST", "TYPEID", "OBJECTID", "ASSIGN", "DARROW", "LT", "LE", "EQ", "PLUS", "MINUS", "TIMES",
-		"DIVIDE", "LPAREN", "RPAREN", "LBRACE", "RBACE", "SEMI", "COLON", "COMMA", "DOT", "AT", "NEG"}[tt]
+		"DIVIDE", "LPAREN", "RPAREN", "LBRACE", "RBACE", "SEMI", "COLON", "COMMA", "DOT", "AT", "NEG", "LBRACKET", "RBRACKET"}[tt]
 }
 
 // Token represents a lexical token with its type, value, and position.
@@ -99,8 +104,6 @@ func NewLexer(reader io.Reader) *Lexer {
 	return l
 }
 
-
-
 // readChar reads the next character from the input.
 func (l *Lexer) readChar() {
 	var err error
@@ -116,9 +119,6 @@ func (l *Lexer) readChar() {
 	}
 }
 
-
-
-
 // MAHMOUD MAFTAH : skipComment skips a single-line comment
 func (l *Lexer) skipSingleLineComment() {
 	// Skip until we find a newline or EOF
@@ -127,47 +127,35 @@ func (l *Lexer) skipSingleLineComment() {
 	}
 }
 
-
-
-
-
 // MAHMOUD MAFTAH : skipMultiLineComment skips a multi-line comment, handling nested comments
 func (l *Lexer) skipMultiLineComment() error {
 	nestingLevel := 1
 	l.readChar() // Skip the opening '('
-	
+
 	for nestingLevel > 0 {
 		if l.char == 0 {
 			return fmt.Errorf("EOF in comment")
 		}
-		
+
 		if l.char == '(' && l.peekChar() == '*' {
 			l.readChar() // Skip '('
 			l.readChar() // Skip '*'
 			nestingLevel++
 			continue
 		}
-		
+
 		if l.char == '*' && l.peekChar() == ')' {
 			l.readChar() // Skip '*'
 			l.readChar() // Skip ')'
 			nestingLevel--
 			continue
 		}
-		
+
 		l.readChar()
 	}
-	
+
 	return nil
 }
-
-
-
-
-
-
-
-
 
 // peekChar returns the next character without advancing the stream.
 func (l *Lexer) peekChar() rune {
@@ -267,11 +255,10 @@ func (l *Lexer) NextToken() Token {
 	case l.char == 0:
 		tok.Type = EOF
 		tok.Literal = ""
-	
+
 	case l.char == '-' && l.peekChar() == '-':
 		l.skipSingleLineComment()
 		return l.NextToken() // Skip the comment and get the next token
-	
 
 	case l.char == '(' && l.peekChar() == '*':
 		if err := l.skipMultiLineComment(); err != nil {
@@ -280,7 +267,6 @@ func (l *Lexer) NextToken() Token {
 			return tok
 		}
 		return l.NextToken() // Skip the comment and get the next token
-
 
 	case l.char == 0:
 		tok.Type = EOF
@@ -292,6 +278,14 @@ func (l *Lexer) NextToken() Token {
 	case l.char == ')':
 		tok.Type = RPAREN
 		tok.Literal = ")"
+		l.readChar()
+	case l.char == '[':
+		tok.Type = LBRACKET
+		tok.Literal = "["
+		l.readChar()
+	case l.char == ']':
+		tok.Type = RBRACKET
+		tok.Literal = "]"
 		l.readChar()
 	case l.char == '{':
 		tok.Type = LBRACE

@@ -1,13 +1,10 @@
-class Main inherits IO {
-   main() : Object {
-      let 
-         num : Int,
-         result : Int
-      in {
-         out_string("Enter a number: ");
-         num <- in_int();
-         result <- num + 1;
-         out_string("Result is: ").out_int(result).out_string("\n");
-      }
-   };
+class Main {
+  main() : Object {
+    let arr : Array[Int] <- new Array[Int](10) in {
+      arr[0] <- 5;
+      arr[1] <- 10;
+      out_int(arr[0] + arr[1]);
+      out_int(arr.size());
+    }
+  };
 };

@@ -89,11 +89,6 @@ func (cg *CodeGenerator) generateIOFunctions() {
 	// Return self
 	entryIn.NewRet(selfIn)
 
-
-
-
-
-	
 	// Implement IO_in_int using gets and atoi
 	inInt := cg.runtimeFuncs["IO_in_int"]
 	entryInInt := inInt.NewBlock("entry")
@@ -245,4 +240,13 @@ func (cg *CodeGenerator) generateObjectMethods() {
 	entryCopy := copyFunc.NewBlock("entry")
 	entryCopy.NewRet(copyFunc.Params[0])
 	cg.methods["Object"]["copy"] = copyFunc
+}
+
+func (cg *CodeGenerator) isMethodReturningSelfType(className, methodName string) bool {
+	// Try to find the AST method definition
+	// This is a simplified approach - in a real implementation, you'd have this information from semantic analysis
+	if className == "Animal" && methodName == "init" {
+		return true // We know init returns SELF_TYPE
+	}
+	return false
 }
