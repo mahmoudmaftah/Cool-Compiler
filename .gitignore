@@ -1,1 +1,16 @@
 TEST/
+
+testCodeGen.go
+
+// runtime and codegen are older versions
+runtime.go
+codegen.go
+
+syntax/notes.txt
+
+*.exe
+*.ll
+*.txt
+
+*json
+*sqlite
