@@ -137,6 +137,16 @@ func (p *Printer) PrintExpression(expr ast.Expression) string {
 		sb.WriteString(p.PrintExpression(e.Right))
 		p.depth--
 		return sb.String()
+	case *ast.Assignment:
+		// has attributes token, name and value
+		var sb strings.Builder
+		sb.WriteString(p.indent())
+		sb.WriteString("Assignment: " + e.Name.Value + "\n")
+		p.depth++
+		sb.WriteString(p.PrintExpression(e.Value))
+		p.depth--
+		return sb.String()
+
 	case *ast.IfExpression:
 		var sb strings.Builder
 		sb.WriteString(p.indent())

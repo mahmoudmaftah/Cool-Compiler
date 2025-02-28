@@ -1,0 +1,54 @@
+class Main inherits IO {
+  main() : Object {
+    let 
+      arr : Array[Int] <- new Array[Int](10),
+      sum : Int <- 0,
+      avg : Int <- 0,
+      i : Int <- 0
+    in {
+      -- Initialize array with values 1 through 10
+      i <- 0;
+      while i < arr.size() loop {
+        arr[i] <- i + 1;
+        i <- i + 1;
+      } pool;
+      
+      -- Calculate sum
+      i <- 0;
+      while i < arr.size() loop {
+        sum <- sum + arr[i];
+        i <- i + 1;
+      } pool;
+        
+      -- Calculate average
+      if 0 < arr.size() then
+        avg <- sum / arr.size()
+      else
+        avg <- 0
+      fi;
+        
+      -- Double each value
+      i <- 0;
+      while i < arr.size() loop {
+        arr[i] <- arr[i] * 2;
+        i <- i + 1;
+      } pool;
+        
+      -- Print results
+      out_string("Sum of original values: ");
+      out_int(sum);
+      out_string("\nAverage: ");
+      out_int(avg);
+      out_string("\nDoubled values: ");
+        
+      i <- 0;
+      while i < arr.size() loop {
+        out_int(arr[i]);
+        out_string(" ");
+        i <- i + 1;
+      } pool;
+        
+      out_string("\n");
+    }
+  };
+};

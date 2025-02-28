@@ -19,6 +19,7 @@ func (cg *CodeGenerator) generateRuntimeLibrary() {
 
 	// Implement stub versions of any required external functions if needed
 	cg.implementStubGCFunctions()
+
 }
 
 func (cg *CodeGenerator) implementStubGCFunctions() {

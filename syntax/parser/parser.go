@@ -156,6 +156,8 @@ func (p *Parser) expectAndPeek(t lexer.TokenType) bool {
 		return true
 	}
 	p.peekError(t)
+	// Always advance token when expectation fails to avoid infinite loops
+	p.nextToken()
 	return false
 }
 
@@ -165,6 +167,8 @@ func (p *Parser) expectCurrent(t lexer.TokenType) bool {
 		return true
 	}
 	p.currentError(t)
+	// Always advance token when expectation fails
+	p.nextToken()
 	return false
 }
 
@@ -358,6 +362,8 @@ func (p *Parser) parseMethod() *ast.Method {
 		return nil
 	}
 	method.Name = &ast.ObjectIdentifier{Token: p.curToken, Value: p.curToken.Literal}
+	// print method name
+	fmt.Println(method.Name.Value)
 
 	// Parse opening parenthesis
 	if !p.expectAndPeek(lexer.LPAREN) {
@@ -383,6 +389,8 @@ func (p *Parser) parseMethod() *ast.Method {
 		}
 	}
 
+	// fmt.Println("fomals parsed")
+
 	// Parse closing parenthesis
 	if !p.expectAndPeek(lexer.RPAREN) {
 		return nil
@@ -406,6 +414,10 @@ func (p *Parser) parseMethod() *ast.Method {
 
 	// Parse method body as a block expression
 	method.Body = p.parseBlockExpression()
+
+	if method.Body == nil {
+		fmt.Println("Failed")
+	}
 
 	// read the rbrace
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -502,7 +514,6 @@ func (p *Parser) parseExpression(precedence Precedence) ast.Expression {
 		p.nextToken()
 		leftExp = infix(leftExp)
 	}
-
 	return leftExp
 }
 
@@ -549,32 +560,119 @@ func (p *Parser) parseAssignmentExpression(left ast.Expression) ast.Expression {
 	return expr
 }
 
+// func (p *Parser) parseIfExpression() ast.Expression {
+// 	expression := &ast.IfExpression{Token: p.curToken}
+
+// 	p.nextToken() // Move past 'if'
+// 	expression.Condition = p.parseExpression(LOWEST)
+
+// 	if !p.expectAndPeek(lexer.THEN) {
+// 		return nil
+// 	}
+
+// 	p.nextToken() // Move past 'then'
+// 	expression.Consequence = p.parseExpression(LOWEST)
+
+// 	if !p.expectAndPeek(lexer.ELSE) {
+// 		return nil
+// 	}
+
+// 	p.nextToken() // Move past 'else'
+// 	expression.Alternative = p.parseExpression(LOWEST)
+
+// 	if !p.expectAndPeek(lexer.FI) {
+// 		return nil
+// 	}
+
+// 	return expression
+// }
+
 func (p *Parser) parseIfExpression() ast.Expression {
 	expression := &ast.IfExpression{Token: p.curToken}
 
 	p.nextToken() // Move past 'if'
 	expression.Condition = p.parseExpression(LOWEST)
 
-	if !p.expectAndPeek(lexer.THEN) {
-		return nil
+	if expression.Condition == nil {
+		// If condition parsing failed, try to recover by finding 'then'
+		for !p.curTokenIs(lexer.THEN) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.THEN) {
+			return nil
+		}
+	} else if !p.expectAndPeek(lexer.THEN) {
+		// expectAndPeek already advances token on error
 	}
 
 	p.nextToken() // Move past 'then'
 	expression.Consequence = p.parseExpression(LOWEST)
 
-	if !p.expectAndPeek(lexer.ELSE) {
-		return nil
+	if expression.Consequence == nil {
+		// If consequence parsing failed, try to recover by finding 'else'
+		for !p.curTokenIs(lexer.ELSE) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.ELSE) {
+			return nil
+		}
+	} else if !p.expectAndPeek(lexer.ELSE) {
+		// expectAndPeek already advances token on error
 	}
 
 	p.nextToken() // Move past 'else'
 	expression.Alternative = p.parseExpression(LOWEST)
 
-	if !p.expectAndPeek(lexer.FI) {
-		return nil
+	if expression.Alternative == nil {
+		// If alternative parsing failed, try to recover by finding 'fi'
+		for !p.curTokenIs(lexer.FI) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.FI) {
+			return nil
+		}
+	} else if !p.expectAndPeek(lexer.FI) {
+		// Try to recover by finding 'fi'
+		for !p.curTokenIs(lexer.FI) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if p.curTokenIs(lexer.FI) {
+			p.nextToken() // Move past 'fi'
+		}
 	}
 
 	return expression
 }
+
+// func (p *Parser) parseWhileExpression() ast.Expression {
+// 	// fmt.Println("Parsing while expression")
+// 	expression := &ast.WhileExpression{Token: p.curToken}
+
+// 	p.nextToken() // Move past 'while'
+// 	expression.Condition = p.parseExpression(LOWEST)
+
+// 	if !p.expectAndPeek(lexer.LOOP) {
+// 		return nil
+// 	}
+
+// 	p.nextToken() // Move past 'loop'
+
+// 	// Parse the body expression
+// 	if p.curTokenIs(lexer.LBRACE) {
+// 		expression.Body = p.parseBlockExpression()
+// 	} else {
+// 		expression.Body = p.parseExpression(LOWEST)
+// 	}
+
+// 	if !p.expectAndPeek(lexer.POOL) {
+// 		p.errors = append(p.errors, fmt.Sprintf(
+// 			"Expected 'pool' at line %d col %d, got %s",
+// 			p.curToken.Line, p.curToken.Column, p.curToken.Type))
+// 		return nil
+// 	}
+
+// 	return expression
+// }
 
 func (p *Parser) parseWhileExpression() ast.Expression {
 	expression := &ast.WhileExpression{Token: p.curToken}
@@ -582,8 +680,16 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 	p.nextToken() // Move past 'while'
 	expression.Condition = p.parseExpression(LOWEST)
 
-	if !p.expectAndPeek(lexer.LOOP) {
-		return nil
+	if expression.Condition == nil {
+		// If condition parsing failed, try to recover by finding 'loop'
+		for !p.curTokenIs(lexer.LOOP) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.LOOP) {
+			return nil
+		}
+	} else if !p.expectAndPeek(lexer.LOOP) {
+		// expectAndPeek already advances token on error
 	}
 
 	p.nextToken() // Move past 'loop'
@@ -595,14 +701,39 @@ func (p *Parser) parseWhileExpression() ast.Expression {
 		expression.Body = p.parseExpression(LOWEST)
 	}
 
+	if expression.Body == nil {
+		// If body parsing failed, try to recover by finding 'pool'
+		for !p.curTokenIs(lexer.POOL) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.POOL) {
+			return nil
+		}
+	}
+
 	if !p.expectAndPeek(lexer.POOL) {
-		p.errors = append(p.errors, fmt.Sprintf(
-			"Expected 'pool' at line %d col %d, got %s",
-			p.curToken.Line, p.curToken.Column, p.curToken.Type))
-		return nil
+		// Try to recover by finding 'pool'
+		for !p.curTokenIs(lexer.POOL) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if p.curTokenIs(lexer.POOL) {
+			p.nextToken() // Move past 'pool'
+		}
 	}
 
 	return expression
+}
+
+// Add a helper function for error recovery
+func (p *Parser) skipUntil(tokenTypes ...lexer.TokenType) {
+	for !p.curTokenIs(lexer.EOF) {
+		for _, tt := range tokenTypes {
+			if p.curTokenIs(tt) {
+				return
+			}
+		}
+		p.nextToken()
+	}
 }
 
 func (p *Parser) parseBlockExpression() ast.Expression {
@@ -611,11 +742,12 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 		Expressions: []ast.Expression{},
 	}
 
-	// check if current token is '{' and move past it
+	// Check if current token is '{' and move past it
 	if !p.curTokenIs(lexer.LBRACE) {
 		p.errors = append(p.errors, fmt.Sprintf(
 			"Expected opening brace for block at line %d col %d",
 			p.curToken.Line, p.curToken.Column))
+		p.nextToken() // Advance token even on error
 		return nil
 	}
 	p.nextToken() // Move past the opening brace
@@ -624,7 +756,19 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
 		expr := p.parseExpression(LOWEST)
 		if expr == nil {
-			return nil
+			// If expression parsing failed, try to recover
+			// Skip until we find a semicolon or closing brace
+			for !p.curTokenIs(lexer.SEMI) &&
+				!p.curTokenIs(lexer.RBRACE) &&
+				!p.curTokenIs(lexer.EOF) {
+				p.nextToken()
+			}
+
+			if p.curTokenIs(lexer.SEMI) {
+				p.nextToken() // Move past semicolon
+				continue      // Try to parse next expression
+			}
+			break // Exit loop if we can't recover
 		}
 
 		block.Expressions = append(block.Expressions, expr)
@@ -632,7 +776,8 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 		// Require semicolon after each expression except the last one
 		if !p.peekTokenIs(lexer.RBRACE) {
 			if !p.expectAndPeek(lexer.SEMI) {
-				return nil
+				// Even if expectAndPeek fails, it advances the token
+				continue
 			}
 			p.nextToken() // Move past semicolon
 		} else {
@@ -645,18 +790,36 @@ func (p *Parser) parseBlockExpression() ast.Expression {
 		p.errors = append(p.errors, fmt.Sprintf(
 			"Expected closing brace for block at line %d col %d",
 			p.curToken.Line, p.curToken.Column))
+		p.nextToken() // Always advance
 		return nil
 	}
+
 	return block
 }
 
+// Fix parseLetExpression to better handle multiple bindings and ensure token advancement
 func (p *Parser) parseLetExpression() ast.Expression {
 	expr := &ast.LetExpression{Token: p.curToken}
 	expr.Bindings = []*ast.LetBinding{}
 
 	for {
 		if !p.expectAndPeek(lexer.OBJECTID) {
-			return nil
+			// If we failed to get an identifier, try to recover
+			// by skipping to comma, in, or semicolon
+			for !p.curTokenIs(lexer.COMMA) &&
+				!p.curTokenIs(lexer.IN) &&
+				!p.curTokenIs(lexer.EOF) {
+				p.nextToken()
+			}
+
+			if p.curTokenIs(lexer.COMMA) {
+				p.nextToken() // Skip comma and continue
+				continue
+			} else if p.curTokenIs(lexer.IN) {
+				break // Move on to parse the body
+			} else {
+				return nil // Can't recover
+			}
 		}
 
 		binding := &ast.LetBinding{
@@ -664,13 +827,15 @@ func (p *Parser) parseLetExpression() ast.Expression {
 		}
 
 		if !p.expectAndPeek(lexer.COLON) {
-			return nil
+			// Try to recover
+			continue
 		}
 
 		p.nextToken() // Move to type
 		binding.Type = p.parseTypeIdentifier()
 		if binding.Type == nil {
-			return nil
+			// Try to recover
+			continue
 		}
 
 		if p.peekTokenIs(lexer.ASSIGN) {
@@ -680,7 +845,20 @@ func (p *Parser) parseLetExpression() ast.Expression {
 			// Parse initialization expression
 			binding.Init = p.parseExpression(LOWEST)
 			if binding.Init == nil {
-				return nil
+				// Even on failure, we should continue to next binding
+				// or try to parse the body
+				for !p.curTokenIs(lexer.COMMA) &&
+					!p.curTokenIs(lexer.IN) &&
+					!p.curTokenIs(lexer.EOF) {
+					p.nextToken()
+				}
+
+				if p.curTokenIs(lexer.COMMA) {
+					p.nextToken() // Skip comma and continue
+					continue
+				} else if p.curTokenIs(lexer.IN) {
+					break // Move on to parse the body
+				}
 			}
 		}
 
@@ -693,16 +871,30 @@ func (p *Parser) parseLetExpression() ast.Expression {
 	}
 
 	if !p.expectAndPeek(lexer.IN) {
-		return nil
+		// If we can't find 'in', try to recover
+		for !p.curTokenIs(lexer.LBRACE) && !p.curTokenIs(lexer.EOF) {
+			p.nextToken()
+		}
+		if !p.curTokenIs(lexer.LBRACE) {
+			return nil
+		}
 	}
 
-	p.nextToken() // move past IN
+	p.nextToken() // move past IN if not already
 
 	// Parse the 'in' expression
 	if p.curTokenIs(lexer.LBRACE) {
 		expr.In = p.parseBlockExpression()
+		if expr.In == nil {
+			// Even on failure, try to return what we have
+			return expr
+		}
 	} else {
 		expr.In = p.parseExpression(LOWEST)
+		if expr.In == nil {
+			// Even on failure, try to return what we have
+			return expr
+		}
 	}
 
 	return expr

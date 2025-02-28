@@ -14,6 +14,15 @@ import (
 
 func main() {
 
+	// the command will have another flag to specify the output file
+	// it will also have a flag to specify wether to print the AST or not
+	// go run main.go -i input.cl -o output.ll -p
+	// if the user uses the -p flag, the program will print the AST into a .ast file with the same name as the output file
+	// it will also have a a flag to add optimizations to the code and the optimization level
+	// go run main.go -i input.cl -o output.ll -p -O 3
+
+	// the other flags are optional, the main one is -i
+
 	inputFilePath := flag.String("i", "", "Path to your program")
 	flag.Parse()
 
@@ -30,8 +39,23 @@ func main() {
 
 	fmt.Println("Parsing...")
 	l := lexer.NewLexer(strings.NewReader(string(code)))
+	// create a new printer
+
+	// print all tokens
+	// for {
+	// 	tok := l.NextToken()
+	// 	fmt.Printf("Token: %v\n", tok)
+	// 	if tok.Type == lexer.EOF {
+	// 		break
+	// 	}
+	// }
+
 	p := parser.New(l)
 	program := p.ParseProgram()
+
+	pr := parser.NewPrinter()
+	s := pr.PrintProgram(program)
+	fmt.Println(s)
 
 	if len(p.Errors()) > 0 {
 		fmt.Println("Parsing Errors:")
@@ -40,6 +64,7 @@ func main() {
 		}
 		os.Exit(1)
 	}
+	// os.Exit(1)
 
 	fmt.Println("Program Parsed successfully!")
 

@@ -1,0 +1,191 @@
+(*
+ * LinkedList.cl - A standard library implementation of a LinkedList in Cool
+ * This provides a reusable linked list data structure with standard operations
+ *)
+
+class Node {
+    (* Node data attributes *)
+    data : Object;
+    next : Node;
+    
+    (* Initialize a new node with data *)
+    init(d : Object) : Node {
+        {
+            data <- d;
+            next <- void;
+            self;
+        }
+    };
+    
+    (* Get the data stored in this node *)
+    getData() : Object {
+        data
+    };
+    
+    (* Get the next node *)
+    getNext() : Node {
+        next
+    };
+    
+    (* Set the next node reference *)
+    setNext(n : Node) : Node {
+        {
+            next <- n;
+            self;
+        }
+    };
+};
+
+class LinkedList {
+    (* List attributes *)
+    head : Node;
+    tail : Node;
+    count : Int <- 0;
+    
+    (* Initialize an empty list *)
+    init() : LinkedList {
+        {
+            head <- void;
+            tail <- void;
+            count <- 0;
+            self;
+        }
+    };
+    
+    (* Check if the list is empty *)
+    isEmpty() : Bool {
+        count = 0
+    };
+    
+    (* Get the number of elements in the list *)
+    size() : Int {
+        count
+    };
+    
+    (* Add an element to the beginning of the list *)
+    addFirst(elem : Object) : LinkedList {
+        let newNode : Node <- new Node.init(elem) in {
+            if isEmpty() then {
+                head <- newNode;
+                tail <- newNode;
+            } else {
+                newNode.setNext(head);
+                head <- newNode;
+            } fi;
+            count <- count + 1;
+            self;
+        }
+    };
+    
+    (* Add an element to the end of the list *)
+    addLast(elem : Object) : LinkedList {
+        let newNode : Node <- new Node.init(elem) in {
+            if isEmpty() then {
+                head <- newNode;
+                tail <- newNode;
+            } else {
+                tail.setNext(newNode);
+                tail <- newNode;
+            } fi;
+            count <- count + 1;
+            self;
+        }
+    };
+    
+    (* Remove and return the first element *)
+    removeFirst() : Object {
+        if isEmpty() then {
+            abort();
+            new Object; (* Unreachable, but needed for type checking *)
+        } else {
+            let result : Object <- head.getData(),
+                oldHead : Node <- head in {
+                head <- head.getNext();
+                if head = void then
+                    tail <- void
+                else
+                    0
+                fi;
+                count <- count - 1;
+                result;
+            }
+        } fi
+    };
+    
+    (* Remove and return the last element *)
+    removeLast() : Object {
+        if isEmpty() then {
+            abort();
+            new Object; (* Unreachable, but needed for type checking *)
+        } else {
+            if count = 1 then
+                removeFirst()
+            else {
+                let current : Node <- head,
+                    result : Object in {
+                    
+                    (* Navigate to the second-to-last node *)
+                    while not (current.getNext() = tail) loop
+                        current <- current.getNext()
+                    pool;
+                    
+                    (* Store the result from the tail *)
+                    result <- tail.getData();
+                    
+                    (* Update the tail *)
+                    tail <- current;
+                    current.setNext(void);
+                    count <- count - 1;
+                    
+                    result;
+                }
+            } fi
+        } fi
+    };
+    
+    (* Get the element at the specified index *)
+    get(index : Int) : Object {
+        if index < 0 then {
+            abort();
+            new Object; (* Unreachable, but needed for type checking *)
+        } else {
+            if  count <= index then {
+                abort();
+                new Object; (* Unreachable, but needed for type checking *)
+            } else {
+                let current : Node <- head,
+                    i : Int <- 0 in {
+                    while i < index loop {
+                        current <- current.getNext();
+                        i <- i + 1;
+                    } pool;
+                    current.getData();
+                }
+            } fi
+        } fi
+    };
+    
+    (* toString method for debugging *)
+    toString() : String {
+        let result : String <- "",
+            current : Node <- head in {
+            if isEmpty() then
+                result <- "Empty list"
+            else {
+                result <- "LinkedList [size=".concat((new Int).copy(count).toString()).concat("]: ");
+                
+                while not (current = void) loop {
+                    if not (current = head) then
+                        result <- result.concat(" -> ")
+                    else
+                        0
+                    fi;
+                    
+                    result <- result.concat(current.getData().type_name());
+                    current <- current.getNext();
+                } pool;
+            } fi;
+            result;
+        }
+    };
+};

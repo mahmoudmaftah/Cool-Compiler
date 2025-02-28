@@ -50,7 +50,7 @@ const (
 	// Operators
 	ASSIGN   // <-
 	DARROW   // =>
-	LT       //
+	LT       // <
 	LE       // <=
 	EQ       // =
 	PLUS     // +
